@@ -120,6 +120,9 @@ void main_loop() {
                         {"content", result}
                     });
                 }
+                
+                // Add an empty line before model output
+                std::cout << std::endl;
                 continue; // Continue tool call loop
 
             } else if (response.type == ApiResponse::Type::MESSAGE) {

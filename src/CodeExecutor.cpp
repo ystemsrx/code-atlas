@@ -143,8 +143,91 @@ std::string PythonExecutor::execute(const std::string& code) {
                                trimmed_code.find("elif ") != std::string::npos);
     
     if (has_indented_blocks) {
-        // 如果包含缩进块，将整个代码作为一个块处理
-        code_blocks.push_back(trimmed_code);
+        // 如果包含缩进块，需要智能分离最后的表达式
+        std::vector<std::string> lines;
+        size_t pos = 0;
+        size_t found = 0;
+        
+        // 按换行符分割
+        while ((found = trimmed_code.find('\n', pos)) != std::string::npos) {
+            std::string line = trimmed_code.substr(pos, found - pos);
+            lines.push_back(line);
+            pos = found + 1;
+        }
+        // 添加最后一行
+        if (pos < trimmed_code.length()) {
+            std::string last_line = trimmed_code.substr(pos);
+            lines.push_back(last_line);
+        }
+        
+        // 找到最后一个可能的表达式行（没有缩进且不是语句）
+        int last_expression_idx = -1;
+        for (int i = lines.size() - 1; i >= 0; i--) {
+            std::string line = lines[i];
+            // 去除前后空白
+            size_t start = line.find_first_not_of(" \t\r");
+            if (start == std::string::npos) continue; // 空行
+            
+            line = line.substr(start);
+            size_t end = line.find_last_not_of(" \t\r");
+            if (end != std::string::npos) {
+                line = line.substr(0, end + 1);
+            }
+            
+            // 检查是否可能是表达式（没有缩进，不是语句关键字开头）
+            if (start == 0 && // 没有缩进
+                !line.empty() &&
+                line.find("print") != 0 &&
+                line.find("import") != 0 &&
+                line.find("from") != 0 &&
+                line.find("def") != 0 &&
+                line.find("class") != 0 &&
+                line.find("if") != 0 &&
+                line.find("for") != 0 &&
+                line.find("while") != 0 &&
+                line.find("try") != 0 &&
+                line.find("with") != 0 &&
+                line.find("=") == std::string::npos &&
+                line.find("del") != 0 &&
+                line.find("pass") != 0 &&
+                line.find("break") != 0 &&
+                line.find("continue") != 0 &&
+                line.find("return") != 0 &&
+                line.find("yield") != 0 &&
+                line.find("raise") != 0 &&
+                line.find("assert") != 0) {
+                last_expression_idx = i;
+                break;
+            }
+        }
+        
+        if (last_expression_idx >= 0) {
+            // 将代码分为两部分：主体代码和最后的表达式
+            std::string main_code;
+            for (int i = 0; i < last_expression_idx; i++) {
+                if (!main_code.empty()) main_code += "\n";
+                main_code += lines[i];
+            }
+            
+            if (!main_code.empty()) {
+                code_blocks.push_back(main_code);
+            }
+            
+            // 添加最后的表达式
+            std::string expr_line = lines[last_expression_idx];
+            size_t start = expr_line.find_first_not_of(" \t\r");
+            if (start != std::string::npos) {
+                expr_line = expr_line.substr(start);
+                size_t end = expr_line.find_last_not_of(" \t\r");
+                if (end != std::string::npos) {
+                    expr_line = expr_line.substr(0, end + 1);
+                }
+                code_blocks.push_back(expr_line);
+            }
+        } else {
+            // 没有找到可分离的表达式，将整个代码作为一个块处理
+            code_blocks.push_back(trimmed_code);
+        }
     } else {
         // 否则可以安全地按行和分号分割
         std::vector<std::string> lines;
@@ -303,6 +386,35 @@ std::string PythonExecutor::execute(const std::string& code) {
             error_output += check_python_error();
         }
         Py_XDECREF(result);
+        
+        // 尝试获取最后语句的结果（如果它是一个简单的变量名）
+        // 这可以捕获像 "config_data" 这样的单独变量引用
+        std::string trimmed_last = last_block;
+        size_t start = trimmed_last.find_first_not_of(" \t\n\r");
+        if (start != std::string::npos) {
+            trimmed_last = trimmed_last.substr(start);
+            size_t end = trimmed_last.find_last_not_of(" \t\n\r");
+            if (end != std::string::npos) {
+                trimmed_last = trimmed_last.substr(0, end + 1);
+            }
+        }
+        
+        // 检查是否是单行且可能是变量名或简单表达式
+        if (trimmed_last.find('\n') == std::string::npos && 
+            !trimmed_last.empty() &&
+            expression_result.empty()) {
+            PyObject* var_result = PyRun_String(trimmed_last.c_str(), Py_eval_input, main_dict, main_dict);
+            if (var_result) {
+                PyObject* repr_obj = PyObject_Repr(var_result);
+                if (repr_obj) {
+                    expression_result = PyUnicode_AsUTF8(repr_obj);
+                    Py_DECREF(repr_obj);
+                }
+                Py_DECREF(var_result);
+            } else {
+                PyErr_Clear(); // 清除错误
+            }
+        }
     }
 
     // 获取捕获的输出
