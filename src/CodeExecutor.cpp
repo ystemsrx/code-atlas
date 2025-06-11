@@ -16,6 +16,7 @@
 #else
 #include <unistd.h>
 #include <sys/wait.h>
+#include <ctime>
 #endif
 
 // --- PythonExecutor Implementation ---
@@ -125,68 +126,101 @@ std::string PythonExecutor::execute(const std::string& code) {
         return "[No output]";
     }
     
-    // 分割代码行（先按换行符分割，然后处理分号）
-    std::vector<std::string> lines;
-    size_t pos = 0;
-    size_t found = 0;
+    // 改进的代码分割逻辑，保持缩进结构
+    std::vector<std::string> code_blocks;
     
-    // 按换行符分割
-    while ((found = trimmed_code.find('\n', pos)) != std::string::npos) {
-        std::string line = trimmed_code.substr(pos, found - pos);
-        if (!line.empty()) {
-            lines.push_back(line);
-        }
-        pos = found + 1;
-    }
-    // 添加最后一行
-    if (pos < trimmed_code.length()) {
-        std::string last_line = trimmed_code.substr(pos);
-        if (!last_line.empty()) {
-            lines.push_back(last_line);
-        }
-    }
+    // 检查是否包含需要缩进的关键字
+    bool has_indented_blocks = (trimmed_code.find("try:") != std::string::npos ||
+                               trimmed_code.find("if ") != std::string::npos ||
+                               trimmed_code.find("for ") != std::string::npos ||
+                               trimmed_code.find("while ") != std::string::npos ||
+                               trimmed_code.find("def ") != std::string::npos ||
+                               trimmed_code.find("class ") != std::string::npos ||
+                               trimmed_code.find("with ") != std::string::npos ||
+                               trimmed_code.find("except") != std::string::npos ||
+                               trimmed_code.find("finally") != std::string::npos ||
+                               trimmed_code.find("else:") != std::string::npos ||
+                               trimmed_code.find("elif ") != std::string::npos);
     
-    // 如果只有一行，可能包含分号分隔的语句
-    if (lines.size() == 1) {
-        std::string single_line = lines[0];
-        lines.clear();
+    if (has_indented_blocks) {
+        // 如果包含缩进块，将整个代码作为一个块处理
+        code_blocks.push_back(trimmed_code);
+    } else {
+        // 否则可以安全地按行和分号分割
+        std::vector<std::string> lines;
+        size_t pos = 0;
+        size_t found = 0;
         
-        // 按分号分割单行
-        pos = 0;
-        while ((found = single_line.find(';', pos)) != std::string::npos) {
-            std::string stmt = single_line.substr(pos, found - pos);
-            // 移除前后空白
-            size_t stmt_start = stmt.find_first_not_of(" \t\r");
-            if (stmt_start != std::string::npos) {
-                stmt = stmt.substr(stmt_start);
-                size_t stmt_end = stmt.find_last_not_of(" \t\r");
-                if (stmt_end != std::string::npos) {
-                    stmt = stmt.substr(0, stmt_end + 1);
-                }
-                if (!stmt.empty()) {
-                    lines.push_back(stmt);
-                }
-            }
+        // 按换行符分割
+        while ((found = trimmed_code.find('\n', pos)) != std::string::npos) {
+            std::string line = trimmed_code.substr(pos, found - pos);
+            // 保留空行，因为在某些情况下可能有意义
+            lines.push_back(line);
             pos = found + 1;
         }
-        // 添加最后一个语句
-        if (pos < single_line.length()) {
-            std::string last_stmt = single_line.substr(pos);
-            size_t stmt_start = last_stmt.find_first_not_of(" \t\r");
-            if (stmt_start != std::string::npos) {
-                last_stmt = last_stmt.substr(stmt_start);
-                size_t stmt_end = last_stmt.find_last_not_of(" \t\r");
-                if (stmt_end != std::string::npos) {
-                    last_stmt = last_stmt.substr(0, stmt_end + 1);
+        // 添加最后一行
+        if (pos < trimmed_code.length()) {
+            std::string last_line = trimmed_code.substr(pos);
+            lines.push_back(last_line);
+        }
+        
+        // 如果只有一行，可能包含分号分隔的语句
+        if (lines.size() == 1) {
+            std::string single_line = lines[0];
+            lines.clear();
+            
+            // 按分号分割单行
+            pos = 0;
+            while ((found = single_line.find(';', pos)) != std::string::npos) {
+                std::string stmt = single_line.substr(pos, found - pos);
+                // 移除前后空白
+                size_t stmt_start = stmt.find_first_not_of(" \t\r");
+                if (stmt_start != std::string::npos) {
+                    stmt = stmt.substr(stmt_start);
+                    size_t stmt_end = stmt.find_last_not_of(" \t\r");
+                    if (stmt_end != std::string::npos) {
+                        stmt = stmt.substr(0, stmt_end + 1);
+                    }
+                    if (!stmt.empty()) {
+                        lines.push_back(stmt);
+                    }
                 }
-                if (!last_stmt.empty()) {
-                    lines.push_back(last_stmt);
+                pos = found + 1;
+            }
+            // 添加最后一个语句
+            if (pos < single_line.length()) {
+                std::string last_stmt = single_line.substr(pos);
+                size_t stmt_start = last_stmt.find_first_not_of(" \t\r");
+                if (stmt_start != std::string::npos) {
+                    last_stmt = last_stmt.substr(stmt_start);
+                    size_t stmt_end = last_stmt.find_last_not_of(" \t\r");
+                    if (stmt_end != std::string::npos) {
+                        last_stmt = last_stmt.substr(0, stmt_end + 1);
+                    }
+                    if (!last_stmt.empty()) {
+                        lines.push_back(last_stmt);
+                    }
+                }
+            }
+        }
+        
+        // 将每行作为一个独立的代码块（对于简单语句）
+        for (const auto& line : lines) {
+            if (!line.empty()) {
+                // 去除行首行尾空白，但保留必要的缩进结构
+                std::string trimmed_line = line;
+                size_t line_end = trimmed_line.find_last_not_of(" \t\r");
+                if (line_end != std::string::npos) {
+                    trimmed_line = trimmed_line.substr(0, line_end + 1);
+                }
+                if (!trimmed_line.empty()) {
+                    code_blocks.push_back(trimmed_line);
                 }
             }
         }
     }
     
-    if (lines.empty()) {
+    if (code_blocks.empty()) {
         return "[No output]";
     }
 
@@ -208,10 +242,10 @@ std::string PythonExecutor::execute(const std::string& code) {
     std::string expression_result;
     std::string error_output;
     
-    // 执行除最后一行外的所有代码
-    if (lines.size() > 1) {
-        for (size_t i = 0; i < lines.size() - 1; ++i) {
-            PyObject* result = PyRun_String(lines[i].c_str(), Py_file_input, main_dict, main_dict);
+    // 执行除最后一个代码块外的所有代码
+    if (code_blocks.size() > 1) {
+        for (size_t i = 0; i < code_blocks.size() - 1; ++i) {
+            PyObject* result = PyRun_String(code_blocks[i].c_str(), Py_file_input, main_dict, main_dict);
             if (!result) {
                 error_output += check_python_error();
             }
@@ -219,33 +253,35 @@ std::string PythonExecutor::execute(const std::string& code) {
         }
     }
     
-    // 处理最后一行 - 尝试作为表达式执行
-    std::string last_line = lines.back();
+    // 处理最后一个代码块 - 尝试作为表达式执行
+    std::string last_block = code_blocks.back();
     bool executed_as_expression = false;
     
-    // 检查最后一行是否可能是表达式
-    if (last_line.find("print") != 0 &&
-        last_line.find("import") != 0 &&
-        last_line.find("from") != 0 &&
-        last_line.find("def") != 0 &&
-        last_line.find("class") != 0 &&
-        last_line.find("if") != 0 &&
-        last_line.find("for") != 0 &&
-        last_line.find("while") != 0 &&
-        last_line.find("try") != 0 &&
-        last_line.find("with") != 0 &&
-        last_line.find("=") == std::string::npos &&
-        last_line.find("del") != 0 &&
-        last_line.find("pass") != 0 &&
-        last_line.find("break") != 0 &&
-        last_line.find("continue") != 0 &&
-        last_line.find("return") != 0 &&
-        last_line.find("yield") != 0 &&
-        last_line.find("raise") != 0 &&
-        last_line.find("assert") != 0) {
+    // 检查最后一个代码块是否可能是表达式（只对单行简单语句尝试）
+    if (!has_indented_blocks && code_blocks.size() > 0 &&
+        last_block.find('\n') == std::string::npos && // 单行
+        last_block.find("print") != 0 &&
+        last_block.find("import") != 0 &&
+        last_block.find("from") != 0 &&
+        last_block.find("def") != 0 &&
+        last_block.find("class") != 0 &&
+        last_block.find("if") != 0 &&
+        last_block.find("for") != 0 &&
+        last_block.find("while") != 0 &&
+        last_block.find("try") != 0 &&
+        last_block.find("with") != 0 &&
+        last_block.find("=") == std::string::npos &&
+        last_block.find("del") != 0 &&
+        last_block.find("pass") != 0 &&
+        last_block.find("break") != 0 &&
+        last_block.find("continue") != 0 &&
+        last_block.find("return") != 0 &&
+        last_block.find("yield") != 0 &&
+        last_block.find("raise") != 0 &&
+        last_block.find("assert") != 0) {
         
         // 尝试作为表达式执行
-        PyObject* result = PyRun_String(last_line.c_str(), Py_eval_input, main_dict, main_dict);
+        PyObject* result = PyRun_String(last_block.c_str(), Py_eval_input, main_dict, main_dict);
         if (result) {
             // 获取表达式的返回值
             PyObject* repr_obj = PyObject_Repr(result);
@@ -262,7 +298,7 @@ std::string PythonExecutor::execute(const std::string& code) {
     
     // 如果作为表达式执行失败，则作为语句执行
     if (!executed_as_expression) {
-        PyObject* result = PyRun_String(last_line.c_str(), Py_file_input, main_dict, main_dict);
+        PyObject* result = PyRun_String(last_block.c_str(), Py_file_input, main_dict, main_dict);
         if (!result) {
             error_output += check_python_error();
         }
@@ -350,7 +386,13 @@ std::string execute_shell_code(const std::string& shell_name, const std::string&
                 temp_file << "@echo off\n";
                 temp_file << "chcp 65001 >nul 2>&1\n"; // 设置代码页为UTF-8
             }
+            
+            // 修复缩进问题：保持原始代码的格式，不进行额外处理
+            // 确保代码以换行符结尾，避免最后一行执行问题
             temp_file << code;
+            if (!code.empty() && code.back() != '\n') {
+                temp_file << '\n';
+            }
         }
 
         // 2. 创建用于重定向的匿名管道
@@ -500,27 +542,82 @@ std::string execute_shell_code(const std::string& shell_name, const std::string&
 #else
 // --- ShellExecutor Implementation (Linux/macOS) ---
 std::string execute_shell_code(const std::string& shell_name, const std::string& code) {
-    // 此处为 Linux/macOS 的实现，使用 popen
-    // 注意：popen 无法区分 stdout 和 stderr
-    // 一个更完整的实现会使用 fork, exec, pipe
-    std::string command;
+    // 改进的Linux/macOS实现，使用临时文件以更好地处理缩进和复杂脚本
+    namespace fs = std::filesystem;
+    fs::path temp_dir = fs::temp_directory_path();
+    
+    // 生成唯一的临时文件名
+    std::string temp_filename = "code_exec_" + std::to_string(getpid()) + "_" + std::to_string(time(nullptr));
+    
+    std::string ext;
     if (shell_name == "powershell") {
-        command = "pwsh -c '" + code + "'";
-    } else { // bash/sh
-        command = code;
+        ext = ".ps1";
+    } else {
+        ext = ".sh";
     }
+    
+    fs::path temp_file_path = temp_dir / (temp_filename + ext);
+    
+    try {
+        // 写入临时文件
+        {
+            std::ofstream temp_file(temp_file_path, std::ios::out);
+            if (!temp_file.is_open()) {
+                throw std::runtime_error("Could not create temporary file for shell execution.");
+            }
+            
+            // 为bash脚本添加shebang
+            if (shell_name != "powershell") {
+                temp_file << "#!/bin/bash\n";
+            }
+            
+            // 修复缩进问题：保持原始代码的格式，不进行额外处理
+            // 确保代码以换行符结尾，避免最后一行执行问题
+            temp_file << code;
+            if (!code.empty() && code.back() != '\n') {
+                temp_file << '\n';
+            }
+        }
+        
+        // 设置执行权限
+        fs::permissions(temp_file_path, fs::perms::owner_read | fs::perms::owner_write | fs::perms::owner_exec);
+        
+        // 执行命令
+        std::string command;
+        if (shell_name == "powershell") {
+            command = "pwsh -ExecutionPolicy Bypass -File \"" + temp_file_path.string() + "\"";
+        } else {
+            command = "bash \"" + temp_file_path.string() + "\"";
+        }
+        
+        std::array<char, 128> buffer;
+        std::string result;
+        command += " 2>&1"; // 重定向 stderr 到 stdout
 
-    std::array<char, 128> buffer;
-    std::string result;
-    command += " 2>&1"; // 重定向 stderr 到 stdout
-
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(command.c_str(), "r"), pclose);
-    if (!pipe) {
-        throw std::runtime_error("popen() failed!");
+        std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(command.c_str(), "r"), pclose);
+        if (!pipe) {
+            fs::remove(temp_file_path);
+            throw std::runtime_error("popen() failed!");
+        }
+        
+        while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
+            result += buffer.data();
+        }
+        
+        // 清理临时文件
+        fs::remove(temp_file_path);
+        
+        // 移除末尾的换行符（如果存在）
+        while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) {
+            result.pop_back();
+        }
+        
+        return result.empty() ? "[No output]" : result;
+        
+    } catch (...) {
+        // 确保在异常时也删除临时文件
+        fs::remove(temp_file_path);
+        throw;
     }
-    while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
-        result += buffer.data();
-    }
-    return result.empty() ? "[No output]" : result;
 }
 #endif
