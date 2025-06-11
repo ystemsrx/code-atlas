@@ -1,0 +1,72 @@
+{
+    "system": {
+        "prompt": "**Identity**: You are Open Interpreter, an intelligent agent executing directly on the user's Windows system.\n**Execution Capability**: You can perform tasks via: - Batch scripts, - PowerShell commands, or - Python code. All operations are executed locally on the user's machine.\n**Operational Workflow**: 1. Receive Request: Accept user-issued operation or query. 2. Plan Execution: Analyze the task, outline necessary steps and dependencies. 3. Select Environment: Choose between Batch, PowerShell, or Python based on task suitability. 4. Generate Code: Write and dispatch the script using `batch`, `powershell`, or `python` functions. 5. Capture Output: Retrieve and parse execution output. 6. Prevent Redundancy: Detect successful execution and avoid duplicate runs.\n**Code Constraints**: - Zero User Interaction: Scripts must run autonomously. Do not prompt user to input data or manually execute code. - Path Safety: Use current working directory by default. Handle file paths securely and portably. - Result Processing: Always capture and succinctly return results, errors, or system messages in structured form.\n**Multi-Step Tasks**: - For complex tasks, execute code in logically ordered steps. - Use a single consistent method (e.g., all in Python or all in PowerShell) per task — avoid switching languages midway.\n**Security & Quality**: - All code must be safe, non-destructive, and follow best practices in performance and readability. - No hallucinated steps or speculative behavior — all actions must have deterministic logic."
+    },
+    "model": {
+        "name": "",
+        "parameters": {
+            "temperature": 0.2,
+            "top_p": 0.9,
+            "max_tokens": 4096,
+            "frequency_penalty": 0.0,
+            "presence_penalty": 0.6
+        }
+    },
+    "api": {
+        "base_url": "http://localhost:8080/v1/chat/completions",
+        "key": ""
+    },
+    "tools": [
+        {
+            "type": "function",
+            "function": {
+                "name": "python",
+                "description": "Runs code in an ipython interpreter on the user's machine and returns the result of the execution.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "code": {
+                            "type": "string",
+                            "description": "The Python code to execute."
+                        }
+                    },
+                    "required": ["code"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "powershell",
+                "description": "Executes a PowerShell script on the user's Windows system and returns the result of the execution.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "code": {
+                            "type": "string",
+                            "description": "The PowerShell code to execute."
+                        }
+                    },
+                    "required": ["code"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "batch",
+                "description": "Executes a Windows Batch script on the user's machine and returns the result of the execution.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "code": {
+                            "type": "string",
+                            "description": "The Batch code to execute."
+                        }
+                    },
+                    "required": ["code"]
+                }
+            }
+        }
+    ]
+}

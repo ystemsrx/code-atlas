@@ -1,0 +1,6 @@
+llama-cpp-cuda-12.4-x64/
+*.gguf
+test.py
+run_server.bat
+config.json
+*.exe
