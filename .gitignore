@@ -4,3 +4,4 @@ test.py
 run_server.bat
 config.json
 *.exe
+build/
