@@ -151,8 +151,12 @@ ApiResponse ApiClient::send_message(const nlohmann::json& messages) {
                 }
 
             } catch (nlohmann::json::parse_error& e) {
-                std::cerr << "\n[Error] JSON Decode Error: " << e.what() << std::endl;
-                std::cerr << "[Error] Raw line: " << line << std::endl;
+                std::cerr << "\n[JSON Parse Error] " << e.what() << std::endl;
+                std::cerr << "Raw data: " << data_str << std::endl;
+                std::cerr << "This may indicate that the API server returned an invalid response format" << std::endl;
+            } catch (const std::exception& e) {
+                std::cerr << "\n[Error processing stream data] " << e.what() << std::endl;
+                std::cerr << "Data: " << data_str << std::endl;
             }
         }
         return true;
@@ -164,9 +168,30 @@ ApiResponse ApiClient::send_message(const nlohmann::json& messages) {
                                      cpr::Timeout{120000},
                                      cpr::WriteCallback{write_callback});
 
+    // 检查网络连接错误
+    if (response.status_code == 0) {
+        final_response.type = ApiResponse::Type::API_ERROR;
+        final_response.error_message = "[Network Error] Unable to connect to API server: " + url + 
+                                     "\nError details: " + response.error.message;
+        return final_response;
+    }
+
+    // 检查HTTP错误状态码
     if (response.status_code >= 400) {
         final_response.type = ApiResponse::Type::API_ERROR;
-        final_response.error_message = "Connection Error: " + response.error.message + "\nDetails: " + response.text;
+        std::string error_msg = "[API Error] HTTP Status Code: " + std::to_string(response.status_code);
+        
+        if (!response.error.message.empty()) {
+            error_msg += "\nConnection Error: " + response.error.message;
+        }
+        
+        if (!response.text.empty()) {
+            error_msg += "\nServer Response: " + response.text;
+        } else {
+            error_msg += "\nServer returned no response content";
+        }
+        
+        final_response.error_message = error_msg;
         return final_response;
     }
     

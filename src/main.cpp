@@ -12,12 +12,12 @@
 #include <windows.h>
 #endif
 
-// 全局指针，用于信号处理器
+// Global pointer for signal handler
 PythonExecutor* g_python_executor = nullptr;
 
 void signal_handler(int signum) {
     std::cout << "\n[INFO] Exiting gracefully." << std::endl;
-    // 在退出前确保Python解释器被正确关闭
+    // Ensure Python interpreter is properly closed before exit
     if (g_python_executor) {
         delete g_python_executor;
         g_python_executor = nullptr;
@@ -26,15 +26,19 @@ void signal_handler(int signum) {
 }
 
 void main_loop() {
-    // 加载配置
+    // Load configuration
     auto config = load_config();
 
-    // 初始化 API 客户端和 Python 执行器
+    // Initialize API client and Python executor
     ApiClient api_client(config);
     PythonExecutor python_executor;
-    g_python_executor = &python_executor; // 设置全局指针
+    g_python_executor = &python_executor; // Set global pointer
 
-    // 准备消息历史
+    std::cout << "Code Atlas started" << std::endl;
+    std::cout << "API server: " << (config.contains("api") && config["api"].contains("base_url") ? 
+                  config["api"]["base_url"].get<std::string>() : "Not configured") << std::endl;
+
+    // Prepare message history
     nlohmann::json messages = nlohmann::json::array();
     if (config.contains("system") && config["system"].contains("prompt") && !config["system"]["prompt"].get<std::string>().empty()) {
         messages.push_back({
@@ -43,12 +47,12 @@ void main_loop() {
         });
     }
 
-    // 主循环
+    // Main loop
     while (true) {
         std::cout << "> ";
         std::string user_input;
         std::getline(std::cin, user_input);
-        if (std::cin.eof()) { // 处理 Ctrl+D 或文件结尾
+        if (std::cin.eof()) { // Handle Ctrl+D or end of file
              signal_handler(0);
         }
         std::cout << std::endl;
@@ -59,12 +63,17 @@ void main_loop() {
 
         messages.push_back({{"role", "user"}, {"content", user_input}});
 
-        // 工具调用循环
+        // Tool call loop
         while (true) {
             ApiResponse response = api_client.send_message(messages);
 
             if (response.type == ApiResponse::Type::API_ERROR) {
-                std::cerr << response.error_message << std::endl;
+                std::cerr << "\n[API Error] " << response.error_message << std::endl;
+                std::cerr << "\nPlease check:" << std::endl;
+                std::cerr << "1. Network connection is working properly" << std::endl;
+                std::cerr << "2. API server address is correct" << std::endl;
+                std::cerr << "3. API key is valid" << std::endl;
+                std::cerr << "4. Server is running" << std::endl;
                 break; 
             }
 
@@ -110,14 +119,14 @@ void main_loop() {
                         {"content", result}
                     });
                 }
-                continue; // 继续工具调用循环
+                continue; // Continue tool call loop
 
             } else if (response.type == ApiResponse::Type::MESSAGE) {
                 std::cout << std::endl;
                 if (!response.content.empty()) {
                     messages.push_back({{"role", "assistant"}, {"content", response.content}});
                 }
-                break; // 结束工具调用循环，等待用户输入
+                break; // End tool call loop, wait for user input
             }
         }
         std::cout << "\n" << std::endl;
@@ -126,21 +135,27 @@ void main_loop() {
 
 
 int main() {
-    // 在 Windows 上设置控制台代码页以正确显示UTF-8字符
+    // Set console code page on Windows to properly display UTF-8 characters
     #ifdef _WIN32
         SetConsoleOutputCP(CP_UTF8);
         SetConsoleCP(CP_UTF8);
     #endif
 
-    // 注册信号处理器以处理 Ctrl+C
+    // Register signal handler to handle Ctrl+C
     signal(SIGINT, signal_handler);
 
     try {
         main_loop();
     } catch (const std::exception& e) {
-        std::cerr << "\n[FATAL ERROR] An unhandled exception occurred: " << e.what() << std::endl;
+        std::cerr << "\n[Critical Error] Program encountered unhandled exception: " << e.what() << std::endl;
+        std::cerr << "\nThis may be caused by:" << std::endl;
+        std::cerr << "• Incorrect configuration file format" << std::endl;
+        std::cerr << "• Missing dependencies or incompatible versions" << std::endl;
+        std::cerr << "• Insufficient system resources" << std::endl;
+        std::cerr << "• API server configuration issues" << std::endl;
+        
         if(g_python_executor) {
-            delete g_python_executor; // 清理
+            delete g_python_executor; // Cleanup
             g_python_executor = nullptr;
         }
         return 1;
