@@ -95,7 +95,7 @@ void main_loop() {
                     try {
                         std::string tool_name = tool_call.function["name"];
                         auto arguments = nlohmann::json::parse(tool_call.function["arguments"].get<std::string>());
-                        std::string code_to_run = unescape_string(arguments["code"]);
+                        std::string code_to_run = arguments["code"];
 
                         if (tool_name == "python") {
                             result = python_executor.execute(code_to_run);

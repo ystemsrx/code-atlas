@@ -3,6 +3,7 @@
 
 #include <string>
 #include <tuple>
+#include <vector>
 
 /**
  * @brief 处理JSON流中的转义字符。

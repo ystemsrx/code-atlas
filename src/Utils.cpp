@@ -16,7 +16,6 @@ std::string unescape_string(std::string s) {
     return s;
 }
 
-
 std::tuple<std::string, std::string> safe_print_with_escapes(const std::string& buffer) {
     if (buffer.empty()) {
         return {"", ""};
