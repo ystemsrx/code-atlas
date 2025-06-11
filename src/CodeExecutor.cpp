@@ -340,12 +340,13 @@ std::string execute_shell_code(const std::string& shell_name, const std::string&
             if (!temp_file.is_open()){
                  throw std::runtime_error("Could not open temporary file for writing.");
             }
-            // 写入BOM以便PowerShell/CMD正确识别UTF-8
-            temp_file.put((char)0xEF);
-            temp_file.put((char)0xBB);
-            temp_file.put((char)0xBF);
-
+            
+            // PowerShell处理UTF-8时不需要BOM，batch需要
             if (shell_name == "batch") {
+                // 写入BOM以便CMD正确识别UTF-8
+                temp_file.put((char)0xEF);
+                temp_file.put((char)0xBB);
+                temp_file.put((char)0xBF);
                 temp_file << "@echo off\n";
                 temp_file << "chcp 65001 >nul 2>&1\n"; // 设置代码页为UTF-8
             }
@@ -374,16 +375,18 @@ std::string execute_shell_code(const std::string& shell_name, const std::string&
         si.cb = sizeof(STARTUPINFOW);
         si.hStdError = h_stderr_wr;
         si.hStdOutput = h_stdout_wr;
+        si.hStdInput = GetStdHandle(STD_INPUT_HANDLE); // 设置标准输入
         si.dwFlags |= STARTF_USESTDHANDLES;
 
         std::wstring command_line;
         if (shell_name == "powershell") {
-            command_line = L"powershell.exe -ExecutionPolicy Bypass -File \"" + final_temp_path.wstring() + L"\"";
+            // 改进PowerShell命令行参数，确保输出不被缓冲
+            command_line = L"powershell.exe -ExecutionPolicy Bypass -OutputFormat Text -NonInteractive -File \"" + final_temp_path.wstring() + L"\"";
         } else { // batch
             command_line = L"cmd.exe /c \"" + final_temp_path.wstring() + L"\"";
         }
 
-        if (!CreateProcessW(NULL, &command_line[0], NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
+        if (!CreateProcessW(NULL, &command_line[0], NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
             CloseHandle(h_stdout_wr); CloseHandle(h_stdout_rd);
             CloseHandle(h_stderr_wr); CloseHandle(h_stderr_rd);
             fs::remove(final_temp_path);
@@ -395,31 +398,60 @@ std::string execute_shell_code(const std::string& shell_name, const std::string&
         CloseHandle(h_stderr_wr);
         h_stdout_wr = h_stderr_wr = NULL;
 
-        // 4. 等待进程结束并读取输出
+        // 4. 改进的输出读取逻辑
         std::string stdout_str, stderr_str;
         DWORD dwRead;
         CHAR chBuf[4096];
-
-        // 非阻塞读取
-        for (;;) {
-            bool has_read = false;
-            DWORD bytes_available = 0;
+        DWORD bytes_available = 0;  // 声明在外层作用域
+        
+        // 等待进程结束，同时读取输出
+        DWORD wait_result;
+        bool process_finished = false;
+        
+        do {
+            // 检查进程状态
+            wait_result = WaitForSingleObject(pi.hProcess, 100); // 减少等待时间
+            process_finished = (wait_result == WAIT_OBJECT_0);
+            
+            // 读取stdout
+            bytes_available = 0;
             if (PeekNamedPipe(h_stdout_rd, NULL, 0, NULL, &bytes_available, NULL) && bytes_available > 0) {
-                 if (ReadFile(h_stdout_rd, chBuf, sizeof(chBuf) - 1, &dwRead, NULL) && dwRead > 0) {
+                if (ReadFile(h_stdout_rd, chBuf, sizeof(chBuf) - 1, &dwRead, NULL) && dwRead > 0) {
                     chBuf[dwRead] = '\0';
                     stdout_str += chBuf;
-                    has_read = true;
                 }
             }
-             if (PeekNamedPipe(h_stderr_rd, NULL, 0, NULL, &bytes_available, NULL) && bytes_available > 0) {
-                 if (ReadFile(h_stderr_rd, chBuf, sizeof(chBuf) - 1, &dwRead, NULL) && dwRead > 0) {
+            
+            // 读取stderr
+            bytes_available = 0;
+            if (PeekNamedPipe(h_stderr_rd, NULL, 0, NULL, &bytes_available, NULL) && bytes_available > 0) {
+                if (ReadFile(h_stderr_rd, chBuf, sizeof(chBuf) - 1, &dwRead, NULL) && dwRead > 0) {
                     chBuf[dwRead] = '\0';
                     stderr_str += chBuf;
-                    has_read = true;
                 }
             }
-            if (WaitForSingleObject(pi.hProcess, 50) == WAIT_OBJECT_0 && !has_read) {
-                // If process finished and no more data in pipes, break
+            
+        } while (!process_finished || 
+                (PeekNamedPipe(h_stdout_rd, NULL, 0, NULL, &bytes_available, NULL) && bytes_available > 0) ||
+                (PeekNamedPipe(h_stderr_rd, NULL, 0, NULL, &bytes_available, NULL) && bytes_available > 0));
+
+        // 最后再读取一次，确保所有数据都被读取
+        bytes_available = 0;
+        while (PeekNamedPipe(h_stdout_rd, NULL, 0, NULL, &bytes_available, NULL) && bytes_available > 0) {
+            if (ReadFile(h_stdout_rd, chBuf, sizeof(chBuf) - 1, &dwRead, NULL) && dwRead > 0) {
+                chBuf[dwRead] = '\0';
+                stdout_str += chBuf;
+            } else {
+                break;
+            }
+        }
+        
+        bytes_available = 0;
+        while (PeekNamedPipe(h_stderr_rd, NULL, 0, NULL, &bytes_available, NULL) && bytes_available > 0) {
+            if (ReadFile(h_stderr_rd, chBuf, sizeof(chBuf) - 1, &dwRead, NULL) && dwRead > 0) {
+                chBuf[dwRead] = '\0';
+                stderr_str += chBuf;
+            } else {
                 break;
             }
         }
@@ -434,16 +466,30 @@ std::string execute_shell_code(const std::string& shell_name, const std::string&
         
         fs::remove(final_temp_path);
         
+        // 处理输出结果
         std::string result_str;
-        if (!stdout_str.empty()) result_str += stdout_str;
+        if (!stdout_str.empty()) {
+            result_str += stdout_str;
+            // 移除末尾的换行符（如果存在）
+            while (!result_str.empty() && (result_str.back() == '\n' || result_str.back() == '\r')) {
+                result_str.pop_back();
+            }
+        }
+        
         if (!stderr_str.empty()) {
             if (!result_str.empty()) result_str += "\n";
             result_str += "Error: " + stderr_str;
+            // 移除末尾的换行符（如果存在）
+            while (!result_str.empty() && (result_str.back() == '\n' || result_str.back() == '\r')) {
+                result_str.pop_back();
+            }
         }
+        
         if (exit_code != 0 && stderr_str.empty()) {
              if (!result_str.empty()) result_str += "\n";
              result_str += "Process exited with code: " + std::to_string(exit_code);
         }
+        
         return result_str.empty() ? "[No output]" : result_str;
 
     } catch (...) {

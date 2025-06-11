@@ -37,6 +37,7 @@ void main_loop() {
     std::cout << "Code Atlas started" << std::endl;
     std::cout << "API server: " << (config.contains("api") && config["api"].contains("base_url") ? 
                   config["api"]["base_url"].get<std::string>() : "Not configured") << std::endl;
+    std::cout << std::endl;
 
     // Prepare message history
     nlohmann::json messages = nlohmann::json::array();
