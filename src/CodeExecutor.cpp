@@ -13,6 +13,8 @@
 #include <tchar.h>
 #include <stdio.h>
 #include <strsafe.h>
+#include <locale>
+#include <codecvt>
 #else
 #include <unistd.h>
 #include <sys/wait.h>
@@ -20,6 +22,115 @@
 #endif
 
 #include "Utils.h"
+
+#ifdef _WIN32
+// Windows专用：转换ANSI编码的字符串为UTF-8
+std::string convert_ansi_to_utf8(const std::string& ansi_str) {
+    if (ansi_str.empty()) return "";
+    
+    // 首先转换为宽字符
+    int wide_size = MultiByteToWideChar(CP_ACP, 0, ansi_str.c_str(), -1, nullptr, 0);
+    if (wide_size <= 0) return ansi_str; // 转换失败，返回原字符串
+    
+    std::wstring wide_str(wide_size - 1, L'\0');
+    MultiByteToWideChar(CP_ACP, 0, ansi_str.c_str(), -1, &wide_str[0], wide_size);
+    
+    // 然后转换为UTF-8
+    int utf8_size = WideCharToMultiByte(CP_UTF8, 0, wide_str.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    if (utf8_size <= 0) return ansi_str; // 转换失败，返回原字符串
+    
+    std::string utf8_str(utf8_size - 1, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, wide_str.c_str(), -1, &utf8_str[0], utf8_size, nullptr, nullptr);
+    
+    return utf8_str;
+}
+
+// Windows专用：转换UTF-8编码的字符串为ANSI
+std::string utf8_to_ansi(const std::string& utf8_str) {
+    if (utf8_str.empty()) return "";
+    
+    // 首先转换为宽字符
+    int wide_size = MultiByteToWideChar(CP_UTF8, 0, utf8_str.c_str(), -1, nullptr, 0);
+    if (wide_size <= 0) return utf8_str; // 转换失败，返回原字符串
+    
+    std::wstring wide_str(wide_size - 1, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, utf8_str.c_str(), -1, &wide_str[0], wide_size);
+    
+    // 然后转换为ANSI
+    int ansi_size = WideCharToMultiByte(CP_ACP, 0, wide_str.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    if (ansi_size <= 0) return utf8_str; // 转换失败，返回原字符串
+    
+    std::string ansi_str(ansi_size - 1, '\0');
+    WideCharToMultiByte(CP_ACP, 0, wide_str.c_str(), -1, &ansi_str[0], ansi_size, nullptr, nullptr);
+    
+    return ansi_str;
+}
+
+// 检查字符串是否为有效的UTF-8
+bool is_valid_utf8(const std::string& str) {
+    for (size_t i = 0; i < str.length(); ) {
+        unsigned char c = str[i];
+        int bytes_to_read = 0;
+        
+        if (c < 0x80) {
+            bytes_to_read = 1;
+        } else if ((c >> 5) == 0x06) {
+            bytes_to_read = 2;
+        } else if ((c >> 4) == 0x0E) {
+            bytes_to_read = 3;
+        } else if ((c >> 3) == 0x1E) {
+            bytes_to_read = 4;
+        } else {
+            return false; // 无效的UTF-8起始字节
+        }
+        
+        if (i + bytes_to_read > str.length()) {
+            return false; // 字符串长度不足
+        }
+        
+        // 检查后续字节
+        for (int j = 1; j < bytes_to_read; j++) {
+            unsigned char next_byte = str[i + j];
+            if ((next_byte >> 6) != 0x02) {
+                return false; // 无效的UTF-8后续字节
+            }
+        }
+        
+        i += bytes_to_read;
+    }
+    return true;
+}
+
+// 清理和转换输出字符串为有效UTF-8
+std::string sanitize_output_for_utf8(const std::string& output) {
+    if (output.empty()) return output;
+    
+    // 首先检查是否已经是有效的UTF-8
+    if (is_valid_utf8(output)) {
+        return output;
+    }
+    
+    // 如果不是有效UTF-8，尝试从ANSI转换
+    std::string converted = convert_ansi_to_utf8(output);
+    if (is_valid_utf8(converted)) {
+        return converted;
+    }
+    
+    // 如果转换仍然失败，移除无效字符
+    std::string sanitized;
+    for (char c : output) {
+        if (static_cast<unsigned char>(c) < 0x80) {
+            // ASCII字符，安全添加
+            sanitized += c;
+        } else {
+            // 非ASCII字符，用占位符替换
+            sanitized += "?";
+        }
+    }
+    
+    return sanitized;
+}
+#endif
 
 // --- PythonExecutor Implementation ---
 
@@ -233,26 +344,38 @@ std::string execute_shell_code(const std::string& shell_name, const std::string&
 
     try {
         {
-            std::ofstream temp_file(final_temp_path, std::ios::out | std::ios::binary);
-            if (!temp_file.is_open()){
-                 throw std::runtime_error("Could not open temporary file for writing.");
-            }
-            
-            // PowerShell处理UTF-8时不需要BOM，batch需要
             if (shell_name == "batch") {
-                // 写入BOM以便CMD正确识别UTF-8
-                temp_file.put((char)0xEF);
-                temp_file.put((char)0xBB);
-                temp_file.put((char)0xBF);
+                // 对于batch文件，使用ANSI编码写入
+                std::ofstream temp_file(final_temp_path, std::ios::out);
+                if (!temp_file.is_open()){
+                     throw std::runtime_error("Could not open temporary file for writing.");
+                }
+                
+                // 不使用BOM，而是设置代码页并使用ANSI编码
                 temp_file << "@echo off\n";
                 temp_file << "chcp 65001 >nul 2>&1\n"; // 设置代码页为UTF-8
-            }
-            
-            // 修复缩进问题：保持原始代码的格式，不进行额外处理
-            // 确保代码以换行符结尾，避免最后一行执行问题
-            temp_file << code;
-            if (!code.empty() && code.back() != '\n') {
-                temp_file << '\n';
+                
+                // 将UTF-8代码转换为ANSI再写入
+#ifdef _WIN32
+                std::string ansi_code = utf8_to_ansi(code);
+                temp_file << ansi_code;
+#else
+                temp_file << code;
+#endif
+                if (!code.empty() && code.back() != '\n') {
+                    temp_file << '\n';
+                }
+            } else {
+                // 对于PowerShell文件，继续使用UTF-8编码
+                std::ofstream temp_file(final_temp_path, std::ios::out | std::ios::binary);
+                if (!temp_file.is_open()){
+                     throw std::runtime_error("Could not open temporary file for writing.");
+                }
+                
+                temp_file << code;
+                if (!code.empty() && code.back() != '\n') {
+                    temp_file << '\n';
+                }
             }
         }
 
@@ -372,6 +495,12 @@ std::string execute_shell_code(const std::string& shell_name, const std::string&
         // 处理输出结果
         std::string result_str;
         if (!stdout_str.empty()) {
+            // 对于batch脚本，需要进行编码转换
+#ifdef _WIN32
+            if (shell_name == "batch") {
+                stdout_str = sanitize_output_for_utf8(stdout_str);
+            }
+#endif
             result_str += stdout_str;
             // 移除末尾的换行符（如果存在）
             while (!result_str.empty() && (result_str.back() == '\n' || result_str.back() == '\r')) {
@@ -380,6 +509,12 @@ std::string execute_shell_code(const std::string& shell_name, const std::string&
         }
         
         if (!stderr_str.empty()) {
+            // 对于batch脚本，需要进行编码转换
+#ifdef _WIN32
+            if (shell_name == "batch") {
+                stderr_str = sanitize_output_for_utf8(stderr_str);
+            }
+#endif
             if (!result_str.empty()) result_str += "\n";
             result_str += "Error: " + stderr_str;
             // 移除末尾的换行符（如果存在）
