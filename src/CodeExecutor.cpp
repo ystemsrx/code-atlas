@@ -24,7 +24,11 @@
 // --- PythonExecutor Implementation ---
 
 PythonExecutor::PythonExecutor() : main_module(nullptr), main_dict(nullptr) {
+    // 确保Python解释器正确初始化
+    if (!Py_IsInitialized()) {
     Py_Initialize();
+    }
+    
     if (!Py_IsInitialized()) {
         throw std::runtime_error("Failed to initialize Python interpreter.");
     }
@@ -36,17 +40,14 @@ PythonExecutor::PythonExecutor() : main_module(nullptr), main_dict(nullptr) {
     }
     main_dict = PyModule_GetDict(main_module);
 
-    // 预加载库
+    // 简化预加载，避免复杂的导入
     const char* pre_run_code =
         "import sys\n"
-        "import io\n"
-        "try:\n"
-        "    import zhplot\n"
-        "except ImportError:\n"
-        "    pass\n";
+        "import io\n";
     PyObject* result = PyRun_String(pre_run_code, Py_file_input, main_dict, main_dict);
     if (!result) {
-        check_python_error(); // 检查并打印预运行代码中的错误
+        std::string error = check_python_error();
+        // 不抛出异常，只是记录错误
     }
     Py_XDECREF(result);
 }
@@ -111,10 +112,9 @@ std::string PythonExecutor::check_python_error() {
 
 
 std::string PythonExecutor::execute(const std::string& code) {
-    // 处理代码，支持多行代码和复合语句
+    // 处理代码，移除前后空白字符
     std::string trimmed_code = code;
     
-    // 移除前后空白字符
     size_t start = trimmed_code.find_first_not_of(" \t\n\r");
     if (start != std::string::npos) {
         trimmed_code = trimmed_code.substr(start);
@@ -128,335 +128,82 @@ std::string PythonExecutor::execute(const std::string& code) {
         return "[No output]";
     }
     
-    // 改进的代码分割逻辑，保持缩进结构
-    std::vector<std::string> code_blocks;
-    
-    // 检查是否包含需要缩进的关键字
-    bool has_indented_blocks = (trimmed_code.find("try:") != std::string::npos ||
-                               trimmed_code.find("if ") != std::string::npos ||
-                               trimmed_code.find("for ") != std::string::npos ||
-                               trimmed_code.find("while ") != std::string::npos ||
-                               trimmed_code.find("def ") != std::string::npos ||
-                               trimmed_code.find("class ") != std::string::npos ||
-                               trimmed_code.find("with ") != std::string::npos ||
-                               trimmed_code.find("except") != std::string::npos ||
-                               trimmed_code.find("finally") != std::string::npos ||
-                               trimmed_code.find("else:") != std::string::npos ||
-                               trimmed_code.find("elif ") != std::string::npos);
-    
-    if (has_indented_blocks) {
-        // 如果包含缩进块，需要智能分离最后的表达式
-        std::vector<std::string> lines;
-        size_t pos = 0;
-        size_t found = 0;
-        
-        // 按换行符分割
-        while ((found = trimmed_code.find('\n', pos)) != std::string::npos) {
-            std::string line = trimmed_code.substr(pos, found - pos);
-            lines.push_back(line);
-            pos = found + 1;
-        }
-        // 添加最后一行
-        if (pos < trimmed_code.length()) {
-            std::string last_line = trimmed_code.substr(pos);
-            lines.push_back(last_line);
-        }
-        
-        // 找到最后一个可能的表达式行（没有缩进且不是语句）
-        int last_expression_idx = -1;
-        for (int i = lines.size() - 1; i >= 0; i--) {
-            std::string line = lines[i];
-            // 去除前后空白
-            size_t start = line.find_first_not_of(" \t\r");
-            if (start == std::string::npos) continue; // 空行
-            
-            line = line.substr(start);
-            size_t end = line.find_last_not_of(" \t\r");
-            if (end != std::string::npos) {
-                line = line.substr(0, end + 1);
-            }
-            
-            // 检查是否可能是表达式（没有缩进，不是语句关键字开头）
-            if (start == 0 && // 没有缩进
-                !line.empty() &&
-                line.find("print") != 0 &&
-                line.find("import") != 0 &&
-                line.find("from") != 0 &&
-                line.find("def") != 0 &&
-                line.find("class") != 0 &&
-                line.find("if") != 0 &&
-                line.find("for") != 0 &&
-                line.find("while") != 0 &&
-                line.find("try") != 0 &&
-                line.find("with") != 0 &&
-                line.find("=") == std::string::npos &&
-                line.find("del") != 0 &&
-                line.find("pass") != 0 &&
-                line.find("break") != 0 &&
-                line.find("continue") != 0 &&
-                line.find("return") != 0 &&
-                line.find("yield") != 0 &&
-                line.find("raise") != 0 &&
-                line.find("assert") != 0) {
-                last_expression_idx = i;
-                break;
-            }
-        }
-        
-        if (last_expression_idx >= 0) {
-            // 将代码分为两部分：主体代码和最后的表达式
-            std::string main_code;
-            for (int i = 0; i < last_expression_idx; i++) {
-                if (!main_code.empty()) main_code += "\n";
-                main_code += lines[i];
-            }
-            
-            if (!main_code.empty()) {
-                code_blocks.push_back(main_code);
-            }
-            
-            // 添加最后的表达式
-            std::string expr_line = lines[last_expression_idx];
-            size_t start = expr_line.find_first_not_of(" \t\r");
-            if (start != std::string::npos) {
-                expr_line = expr_line.substr(start);
-                size_t end = expr_line.find_last_not_of(" \t\r");
-                if (end != std::string::npos) {
-                    expr_line = expr_line.substr(0, end + 1);
-                }
-                code_blocks.push_back(expr_line);
-            }
-        } else {
-            // 没有找到可分离的表达式，将整个代码作为一个块处理
-            code_blocks.push_back(trimmed_code);
-        }
-    } else {
-        // 否则可以安全地按行和分号分割
-        std::vector<std::string> lines;
-        size_t pos = 0;
-        size_t found = 0;
-        
-        // 按换行符分割
-        while ((found = trimmed_code.find('\n', pos)) != std::string::npos) {
-            std::string line = trimmed_code.substr(pos, found - pos);
-            // 保留空行，因为在某些情况下可能有意义
-            lines.push_back(line);
-            pos = found + 1;
-        }
-        // 添加最后一行
-        if (pos < trimmed_code.length()) {
-            std::string last_line = trimmed_code.substr(pos);
-            lines.push_back(last_line);
-        }
-        
-        // 如果只有一行，可能包含分号分隔的语句
-        if (lines.size() == 1) {
-            std::string single_line = lines[0];
-            lines.clear();
-            
-            // 按分号分割单行
-            pos = 0;
-            while ((found = single_line.find(';', pos)) != std::string::npos) {
-                std::string stmt = single_line.substr(pos, found - pos);
-                // 移除前后空白
-                size_t stmt_start = stmt.find_first_not_of(" \t\r");
-                if (stmt_start != std::string::npos) {
-                    stmt = stmt.substr(stmt_start);
-                    size_t stmt_end = stmt.find_last_not_of(" \t\r");
-                    if (stmt_end != std::string::npos) {
-                        stmt = stmt.substr(0, stmt_end + 1);
-                    }
-                    if (!stmt.empty()) {
-                        lines.push_back(stmt);
-                    }
-                }
-                pos = found + 1;
-            }
-            // 添加最后一个语句
-            if (pos < single_line.length()) {
-                std::string last_stmt = single_line.substr(pos);
-                size_t stmt_start = last_stmt.find_first_not_of(" \t\r");
-                if (stmt_start != std::string::npos) {
-                    last_stmt = last_stmt.substr(stmt_start);
-                    size_t stmt_end = last_stmt.find_last_not_of(" \t\r");
-                    if (stmt_end != std::string::npos) {
-                        last_stmt = last_stmt.substr(0, stmt_end + 1);
-                    }
-                    if (!last_stmt.empty()) {
-                        lines.push_back(last_stmt);
-                    }
-                }
-            }
-        }
-        
-        // 将每行作为一个独立的代码块（对于简单语句）
-        for (const auto& line : lines) {
-            if (!line.empty()) {
-                // 去除行首行尾空白，但保留必要的缩进结构
-                std::string trimmed_line = line;
-                size_t line_end = trimmed_line.find_last_not_of(" \t\r");
-                if (line_end != std::string::npos) {
-                    trimmed_line = trimmed_line.substr(0, line_end + 1);
-                }
-                if (!trimmed_line.empty()) {
-                    code_blocks.push_back(trimmed_line);
-                }
-            }
-        }
-    }
-    
-    if (code_blocks.empty()) {
-        return "[No output]";
-    }
-
-    // 捕获 stdout 和 stderr
-    const char* capture_code =
+    // 使用更简单的方法捕获输出
+    std::string capture_and_execute = 
         "import sys\n"
         "import io\n"
-        "old_stdout = sys.stdout\n"
-        "old_stderr = sys.stderr\n"
-        "redirected_output = io.StringIO()\n"
-        "redirected_error = io.StringIO()\n"
-        "sys.stdout = redirected_output\n"
-        "sys.stderr = redirected_error\n";
-
-    PyObject* presult = PyRun_String(capture_code, Py_file_input, main_dict, main_dict);
-    if (!presult) return "Failed to redirect stdio:\n" + check_python_error();
-    Py_XDECREF(presult);
+        "from contextlib import redirect_stdout, redirect_stderr\n"
+        "captured_stdout = io.StringIO()\n"
+        "captured_stderr = io.StringIO()\n"
+        "result_value = None\n"
+        "try:\n"
+        "    with redirect_stdout(captured_stdout), redirect_stderr(captured_stderr):\n";
     
-    std::string expression_result;
-    std::string error_output;
+    // 添加用户代码，适当缩进
+    std::istringstream iss(trimmed_code);
+    std::string line;
+    while (std::getline(iss, line)) {
+        capture_and_execute += "        " + line + "\n";
+    }
     
-    // 执行除最后一个代码块外的所有代码
-    if (code_blocks.size() > 1) {
-        for (size_t i = 0; i < code_blocks.size() - 1; ++i) {
-            PyObject* result = PyRun_String(code_blocks[i].c_str(), Py_file_input, main_dict, main_dict);
+    capture_and_execute += 
+        "except Exception as e:\n"
+        "    captured_stderr.write(str(e) + '\\n')\n";
+    
+    // 执行包装后的代码
+    PyObject* result = PyRun_String(capture_and_execute.c_str(), Py_file_input, main_dict, main_dict);
             if (!result) {
-                error_output += check_python_error();
+        return "Execution failed: " + check_python_error();
             }
             Py_XDECREF(result);
-        }
-    }
     
-    // 处理最后一个代码块 - 尝试作为表达式执行
-    std::string last_block = code_blocks.back();
-    bool executed_as_expression = false;
-    
-    // 检查最后一个代码块是否可能是表达式（只对单行简单语句尝试）
-    if (!has_indented_blocks && code_blocks.size() > 0 &&
-        last_block.find('\n') == std::string::npos && // 单行
-        last_block.find("print") != 0 &&
-        last_block.find("import") != 0 &&
-        last_block.find("from") != 0 &&
-        last_block.find("def") != 0 &&
-        last_block.find("class") != 0 &&
-        last_block.find("if") != 0 &&
-        last_block.find("for") != 0 &&
-        last_block.find("while") != 0 &&
-        last_block.find("try") != 0 &&
-        last_block.find("with") != 0 &&
-        last_block.find("=") == std::string::npos &&
-        last_block.find("del") != 0 &&
-        last_block.find("pass") != 0 &&
-        last_block.find("break") != 0 &&
-        last_block.find("continue") != 0 &&
-        last_block.find("return") != 0 &&
-        last_block.find("yield") != 0 &&
-        last_block.find("raise") != 0 &&
-        last_block.find("assert") != 0) {
-        
-        // 尝试作为表达式执行
-        PyObject* result = PyRun_String(last_block.c_str(), Py_eval_input, main_dict, main_dict);
-        if (result) {
-            // 获取表达式的返回值
-            PyObject* repr_obj = PyObject_Repr(result);
-            if (repr_obj) {
-                expression_result = PyUnicode_AsUTF8(repr_obj);
-                Py_DECREF(repr_obj);
-            }
-            Py_DECREF(result);
-            executed_as_expression = true;
-        } else {
-            PyErr_Clear(); // 清除错误，稍后尝试作为语句执行
-        }
-    }
-    
-    // 如果作为表达式执行失败，则作为语句执行
-    if (!executed_as_expression) {
-        PyObject* result = PyRun_String(last_block.c_str(), Py_file_input, main_dict, main_dict);
-        if (!result) {
-            error_output += check_python_error();
-        }
-        Py_XDECREF(result);
-        
-        // 尝试获取最后语句的结果（如果它是一个简单的变量名）
-        // 这可以捕获像 "config_data" 这样的单独变量引用
-        std::string trimmed_last = last_block;
-        size_t start = trimmed_last.find_first_not_of(" \t\n\r");
-        if (start != std::string::npos) {
-            trimmed_last = trimmed_last.substr(start);
-            size_t end = trimmed_last.find_last_not_of(" \t\n\r");
-            if (end != std::string::npos) {
-                trimmed_last = trimmed_last.substr(0, end + 1);
-            }
-        }
-        
-        // 检查是否是单行且可能是变量名或简单表达式
-        if (trimmed_last.find('\n') == std::string::npos && 
-            !trimmed_last.empty() &&
-            expression_result.empty()) {
-            PyObject* var_result = PyRun_String(trimmed_last.c_str(), Py_eval_input, main_dict, main_dict);
-            if (var_result) {
-                PyObject* repr_obj = PyObject_Repr(var_result);
-                if (repr_obj) {
-                    expression_result = PyUnicode_AsUTF8(repr_obj);
-                    Py_DECREF(repr_obj);
-                }
-                Py_DECREF(var_result);
-            } else {
-                PyErr_Clear(); // 清除错误
-            }
-        }
-    }
-
     // 获取捕获的输出
-    std::string std_output;
-    PyObject* output_obj = PyRun_String("redirected_output.getvalue()", Py_eval_input, main_dict, main_dict);
-    if(output_obj) {
-        std_output = PyUnicode_AsUTF8(output_obj);
-        Py_DECREF(output_obj);
-    }
-    
-    PyObject* err_obj = PyRun_String("redirected_error.getvalue()", Py_eval_input, main_dict, main_dict);
-    if(err_obj) {
-        error_output = error_output + PyUnicode_AsUTF8(err_obj);
-        Py_DECREF(err_obj);
-    }
-
-    // 恢复 stdout 和 stderr
-    const char* restore_code =
-        "sys.stdout = old_stdout\n"
-        "sys.stderr = old_stderr\n";
-    presult = PyRun_String(restore_code, Py_file_input, main_dict, main_dict);
-    Py_XDECREF(presult);
-    
     std::string final_output;
     
-    // 首先添加print输出
-    if (!std_output.empty()) {
-        final_output += std_output;
+    // 获取stdout
+    PyObject* stdout_obj = PyRun_String("captured_stdout.getvalue()", Py_eval_input, main_dict, main_dict);
+    if (stdout_obj) {
+        const char* stdout_str = PyUnicode_AsUTF8(stdout_obj);
+        if (stdout_str && strlen(stdout_str) > 0) {
+            final_output += stdout_str;
+        }
+        Py_DECREF(stdout_obj);
     }
     
-    // 然后添加表达式结果
-    if (!expression_result.empty()) {
-        if (!final_output.empty()) final_output += "\n";
-        final_output += expression_result;
+    // 获取stderr
+    PyObject* stderr_obj = PyRun_String("captured_stderr.getvalue()", Py_eval_input, main_dict, main_dict);
+    if (stderr_obj) {
+        const char* stderr_str = PyUnicode_AsUTF8(stderr_obj);
+        if (stderr_str && strlen(stderr_str) > 0) {
+            if (!final_output.empty()) final_output += "\n";
+            final_output += stderr_str;
+        }
+        Py_DECREF(stderr_obj);
     }
     
-    // 最后添加错误信息
-    if (!error_output.empty()) {
-        if (!final_output.empty()) final_output += "\n";
-        final_output += error_output;
+    // 对于简单表达式，尝试获取其值
+    if (final_output.empty()) {
+        // 检查是否是简单表达式
+        if (trimmed_code.find('\n') == std::string::npos && 
+            trimmed_code.find('=') == std::string::npos &&
+            trimmed_code.find("print") != 0 &&
+            trimmed_code.find("import") != 0) {
+            
+            PyObject* expr_result = PyRun_String(trimmed_code.c_str(), Py_eval_input, main_dict, main_dict);
+            if (expr_result) {
+                PyObject* repr_obj = PyObject_Repr(expr_result);
+                if (repr_obj) {
+                    const char* repr_str = PyUnicode_AsUTF8(repr_obj);
+                    if (repr_str) {
+                        final_output = repr_str;
+                    }
+                    Py_DECREF(repr_obj);
+                }
+                Py_DECREF(expr_result);
+            } else {
+                PyErr_Clear();
+            }
+        }
     }
 
     return final_output.empty() ? "[No output]" : final_output;
