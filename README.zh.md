@@ -70,13 +70,13 @@ cmake --build .
 
 ## 🚀 快速开始
 
-可前往 [Releases](https://github.com/ystemsrx/Code-Atlas/releases) 获取预编译版本。
+可前往 [Releases](https://github.com/ystemsrx/code-atlas/releases) 获取预编译版本。
 
 ### 或从源码构建
 
 ```bash
-git clone --depth 1 https://github.com/ystemsrx/Code-Atlas.git
-cd Code-Atlas
+git clone --depth 1 https://github.com/ystemsrx/code-atlas.git
+cd code-atlas
 mkdir build
 cd build
 cmake ..
@@ -130,15 +130,15 @@ llama-server --jinja -fa -hf user/model.gguf
 
 计算阶乘：
 
-![calculate](https://github.com/ystemsrx/Code-Atlas/blob/master/assets/run_calculate.png?raw=true)
+![calculate](https://github.com/ystemsrx/code-atlas/blob/master/assets/run_calculate.png?raw=true)
 
 列出进程：
 
-![get\_process](https://github.com/ystemsrx/Code-Atlas/blob/master/assets/run_get_process.png?raw=true)
+![get_process](https://github.com/ystemsrx/code-atlas/blob/master/assets/run_get_process.png?raw=true)
 
 创建/重命名文件：
 
-![create\_files](https://github.com/ystemsrx/Code-Atlas/blob/master/assets/run_create_files.png?raw=true)
+![create_files](https://github.com/ystemsrx/code-atlas/blob/master/assets/run_create_files.png?raw=true)
 
 ## ⚙️ 配置详情
 

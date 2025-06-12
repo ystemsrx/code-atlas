@@ -70,13 +70,13 @@ Or simply run:
 
 ## 🚀 Getting Started
 
-Download a precompiled binary from [Releases](https://github.com/ystemsrx/Code-Atlas/releases).
+Download a precompiled binary from [Releases](https://github.com/ystemsrx/code-atlas/releases).
 
 ### Or Build from Source
 
 ```bash
-git clone --depth 1 https://github.com/ystemsrx/Code-Atlas.git
-cd Code-Atlas
+git clone --depth 1 https://github.com/ystemsrx/code-atlas.git
+cd code-atlas
 mkdir build
 cd build
 cmake ..
@@ -130,15 +130,15 @@ llama-server --jinja -fa -hf user/model.gguf
 
 Calculate factorial:
 
-![calculate](https://github.com/ystemsrx/Code-Atlas/blob/master/assets/run_calculate.png?raw=true)
+![calculate](https://github.com/ystemsrx/code-atlas/blob/master/assets/run_calculate.png?raw=true)
 
 List processes:
 
-![get_process](https://github.com/ystemsrx/Code-Atlas/blob/master/assets/run_get_process.png?raw=true)
+![get_process](https://github.com/ystemsrx/code-atlas/blob/master/assets/run_get_process.png?raw=true)
 
 Create/rename files:
 
-![create_files](https://github.com/ystemsrx/Code-Atlas/blob/master/assets/run_create_files.png?raw=true)
+![create_files](https://github.com/ystemsrx/code-atlas/blob/master/assets/run_create_files.png?raw=true)
 
 ## ⚙️ Configuration Details
 
