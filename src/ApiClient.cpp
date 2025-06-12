@@ -3,6 +3,7 @@
 #include <cpr/cpr.h>
 #include <iostream>
 #include <map>
+#include <algorithm>
 
 ApiClient::ApiClient(const nlohmann::json& config) {
     // 从配置中获取URL
@@ -23,7 +24,24 @@ ApiClient::ApiClient(const nlohmann::json& config) {
     base_payload["stream"] = true;
     
     if (config.contains("tools") && !config["tools"].empty()) {
-        base_payload["tools"] = config["tools"];
+        // Filter tools based on current operating system
+        nlohmann::json filtered_tools = nlohmann::json::array();
+        auto supported_shells = get_supported_shells();
+
+        for (const auto& tool : config["tools"]) {
+            if (tool.contains("function") && tool["function"].contains("name")) {
+                std::string tool_name = tool["function"]["name"];
+
+                // Check if this tool is supported on the current OS
+                bool is_supported = std::find(supported_shells.begin(), supported_shells.end(), tool_name) != supported_shells.end();
+
+                if (is_supported) {
+                    filtered_tools.push_back(tool);
+                }
+            }
+        }
+
+        base_payload["tools"] = filtered_tools;
     }
 
     if (config.contains("model") && config["model"].contains("name") && !config["model"]["name"].get<std::string>().empty()) {

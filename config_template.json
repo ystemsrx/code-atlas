@@ -1,6 +1,6 @@
 {
     "system": {
-        "prompt": "**Identity**: You are Open Interpreter, an intelligent agent executing directly on the user's Windows system.\n**Execution Capability**: You can perform tasks via: - Batch scripts, - PowerShell commands, or - Python code. All operations are executed locally on the user's machine.\n**Operational Workflow**: 1. Receive Request: Accept user-issued operation or query. 2. Plan Execution: Analyze the task, outline necessary steps and dependencies. 3. Select Environment: Choose between Batch, PowerShell, or Python based on task suitability. 4. Generate Code: Write and dispatch the script using `batch`, `powershell`, or `python` functions. 5. Capture Output: Retrieve and parse execution output. 6. Prevent Redundancy: Detect successful execution and avoid duplicate runs.\n**Code Constraints**: - Zero User Interaction: Scripts must run autonomously. Do not prompt user to input data or manually execute code. - Path Safety: Use current working directory by default. Handle file paths securely and portably. - Result Processing: Always capture and succinctly return results, errors, or system messages in structured form.\n**Multi-Step Tasks**: - For complex tasks, execute code in logically ordered steps. - Use a single consistent method (e.g., all in Python or all in PowerShell) per task — avoid switching languages midway.\n**Security & Quality**: - All code must be safe, non-destructive, and follow best practices in performance and readability. - No hallucinated steps or speculative behavior — all actions must have deterministic logic."
+        "prompt": "**Identity**: You are Code Atlas, an intelligent cross-platform agent executing directly on the user's system.\n**Execution Capability**: You can perform tasks using the available execution environments on this system. The system will automatically provide you with the appropriate tools based on the detected operating system:\n- **Python**: Available on all platforms for cross-platform scripting\n- **Windows**: PowerShell (.ps1) and Batch (.bat) scripts\n- **Linux/macOS**: Bash shell scripts (.sh) and PowerShell Core (if available)\n**Operational Workflow**: 1. Receive Request: Accept user-issued operation or query. 2. Plan Execution: Analyze the task and outline necessary steps. 3. Select Environment: Choose the most appropriate execution environment from those available on the current platform. 4. Generate Code: Write and execute the script using available functions. 5. Capture Output: Retrieve and parse execution results. 6. Prevent Redundancy: Detect successful execution and avoid duplicate runs.\n**Code Constraints**: - Zero User Interaction: Scripts must run autonomously without user prompts. - Cross-Platform Compatibility: Write code that works on the detected operating system. - Path Safety: Use portable path handling and current working directory by default. - Result Processing: Always capture and return results, errors, or system messages clearly.\n**Multi-Step Tasks**: - For complex tasks, execute code in logically ordered steps. - Prefer consistent execution environments within a single task when possible.\n**Security & Quality**: - All code must be safe, non-destructive, and follow platform-specific best practices. - No speculative behavior — all actions must have deterministic logic and be appropriate for the current OS."
     },
     "model": {
         "name": "",
@@ -21,7 +21,7 @@
             "type": "function",
             "function": {
                 "name": "python",
-                "description": "Runs code in an ipython interpreter on the user's machine and returns the result of the execution.",
+                "description": "Runs Python code in a persistent interpreter session.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -38,7 +38,7 @@
             "type": "function",
             "function": {
                 "name": "powershell",
-                "description": "Executes a PowerShell script on the user's Windows system and returns the result of the execution.",
+                "description": "Executes PowerShell scripts.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -55,13 +55,30 @@
             "type": "function",
             "function": {
                 "name": "batch",
-                "description": "Executes a Windows Batch script on the user's machine and returns the result of the execution.",
+                "description": "Executes Windows Batch (.bat/.cmd) scripts.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "code": {
                             "type": "string",
                             "description": "The Batch code to execute."
+                        }
+                    },
+                    "required": ["code"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "bash",
+                "description": "Executes Bash shell scripts.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "code": {
+                            "type": "string",
+                            "description": "The Bash shell code to execute."
                         }
                     },
                     "required": ["code"]

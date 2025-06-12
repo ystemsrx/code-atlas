@@ -13,9 +13,19 @@ find_package(nlohmann_json REQUIRED)
 find_package(cpr REQUIRED)
 find_package(Python 3 REQUIRED COMPONENTS Interpreter Development)
 
-# --- Windows specific ---
+# --- Platform specific configurations ---
 if(WIN32)
+    # Windows-specific libraries
     link_libraries(Shell32)
+elseif(APPLE)
+    # macOS-specific configurations
+    find_library(COREFOUNDATION_LIBRARY CoreFoundation)
+    if(COREFOUNDATION_LIBRARY)
+        link_libraries(${COREFOUNDATION_LIBRARY})
+    endif()
+elseif(UNIX AND NOT APPLE)
+    # Linux-specific configurations
+    # Add any Linux-specific libraries here if needed
 endif()
 
 # --- Source files ---

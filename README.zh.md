@@ -2,9 +2,9 @@
 
 # Code Atlas
 
-**Code Atlas** 是一款功能强大的本地智能代理应用，灵感源自 [Open Interpreter](https://github.com/OpenInterpreter/open-interpreter)，以 C++ 实现，支持本地执行 Python、PowerShell 和批处理脚本，集成 LLM 实现自然语言交互式编程。
+**Code Atlas** 是一款功能强大的跨平台本地智能代理应用，灵感源自 [Open Interpreter](https://github.com/OpenInterpreter/open-interpreter)，以 C++ 实现，支持在 Windows、Linux 和 macOS 上本地执行 Python 和 shell 脚本，集成 LLM 实现自然语言交互式编程。
 
-> **当前主要支持 Windows，Linux/macOS 支持正在开发中。**
+> **完整的跨平台支持，包括 Windows、Linux 和 macOS，具有自动操作系统检测和适当的 shell 选择功能。**
 
 ## ✨ 主要特性
 
@@ -16,13 +16,13 @@
 * ⚡ **流式交互 CLI**：命令行支持实时输出
 * 🛡️ **隐私优先**：本地执行，数据不出机
 * 🔧 **高度可配置**：基于 JSON 的配置系统
-* 🌐 **跨平台设计**：以 Windows 为主，逐步拓展至 Linux/macOS
+* 🌐 **跨平台设计**：支持 Windows、Linux 和 macOS
 
 ## 📋 安装要求
 
 ### 系统需求
 
-* **操作系统**：Windows 10/11（首选）、Linux、macOS
+* **操作系统**：Windows 10/11、Linux、macOS
 * **CPU**：x64 架构，建议具备支持 CUDA 的 GPU
 * **内存**：至少 8GB（推荐 16GB+）
 * **存储**：10GB 可用空间
@@ -30,7 +30,7 @@
 ### 必要依赖
 
 * CMake ≥ 3.16
-* C++17 编译器（GCC/Clang/MSVC）
+* C++ 编译器（GCC/Clang/MSVC）
 * Python 3.x + 开发头文件
 * Git
 
@@ -77,8 +77,10 @@ cmake --build .
 ```bash
 git clone --depth 1 https://github.com/ystemsrx/Code-Atlas.git
 cd Code-Atlas
-mkdir build && cd build
-cmake .. && cmake --build .
+mkdir build
+cd build
+cmake ..
+cmake --build .
 ```
 
 ### 配置模型与 API
@@ -146,11 +148,11 @@ Code Atlas 配置基于 `config.json`：
 * `model`：模型参数
 * `api`：API 地址与密钥（如使用云模型）
 
-支持三种执行环境：
+支持多种执行环境（根据操作系统自动检测）：
 
 * Python：支持状态保持，类 IPython
-* PowerShell：适用于 Windows
-* Batch：Windows 批处理脚本
+* PowerShell/Batch：适用于 Windows
+* Bash：适用于 Linux/macOS
 
 ## 🧩 故障排查
 

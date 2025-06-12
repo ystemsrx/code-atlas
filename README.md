@@ -1,37 +1,37 @@
-[**English**](README.md) | [简体中文](README.zh.md)
+[English](README.md) | [**简体中文**](README.zh.md)
 
 # Code Atlas
 
-**Code Atlas** is a powerful local intelligent agent inspired by [Open Interpreter](https://github.com/OpenInterpreter/open-interpreter). Written in C++, it supports local execution of Python, PowerShell, and batch scripts, and integrates with large language models (LLMs) for natural language-driven interactive programming.
+**Code Atlas** is a powerful cross-platform local intelligent agent application inspired by [Open Interpreter](https://github.com/OpenInterpreter/open-interpreter). Implemented in C++, it supports running Python and shell scripts locally on Windows, Linux, and macOS, with integrated LLMs for natural language-driven interactive programming.
 
-> **Currently optimized for Windows. Linux and macOS support is under active development.**
+> **Full cross-platform support** for Windows, Linux, and macOS with automatic OS detection and shell selection.
 
 ## ✨ Features
 
-* 🤖 **Local AI Agent**: Runs entirely offline with no external API dependency
-* 💬 **Optional Cloud Integration**: Compatible with OpenAI-style APIs for cloud inference
-* 🐍 **Multi-language Execution**: Supports Python, PowerShell, and batch scripting
-* 🔄 **Persistent Interpreter State**: Maintains Python context across multiple interactions
-* 🚀 **Built-in LLM Support**: Local inference enabled via llama.cpp
-* ⚡ **Streaming CLI Interface**: Real-time command-line interaction
-* 🛡️ **Privacy-First**: Your data never leaves your device
-* 🔧 **Highly Configurable**: JSON-based settings and customization
-* 🌐 **Cross-platform Design**: Initially Windows-focused, expanding to Linux/macOS
+* 🤖 **Local AI Agent**: Runs entirely offline without relying on external APIs
+* 💬 **Optional Cloud Access**: Supports remote services compatible with the OpenAI API
+* 🐍 **Multi-language Execution**: Supports Python / PowerShell / Batch scripts
+* 🔄 **Persistent Session State**: Retains Python environment state across multiple rounds
+* 🚀 **Built-in LLM Support**: Compatible with `llama.cpp` for local model inference
+* ⚡ **Streaming CLI Interface**: Command line supports real-time output
+* 🛡️ **Privacy First**: Everything runs locally, no data leaves your machine
+* 🔧 **Highly Configurable**: JSON-based configuration system
+* 🌐 **Cross-Platform Design**: Works seamlessly across Windows, Linux, and macOS
 
 ## 📋 System Requirements
 
-### OS & Hardware
+### Operating System
 
-* **OS**: Windows 10/11 (preferred), Linux, or macOS
-* **CPU**: x64 architecture (CUDA-enabled GPU recommended)
-* **RAM**: Minimum 8GB (16GB+ recommended)
-* **Disk**: At least 10GB free storage
+* **OS**: Windows 10/11, Linux, or macOS
+* **CPU**: x64 architecture (CUDA-compatible GPU recommended)
+* **Memory**: Minimum 8GB (16GB+ recommended)
+* **Storage**: At least 10GB free space
 
-### Core Dependencies
+### Required Dependencies
 
 * CMake ≥ 3.16
-* C++17-compliant compiler (GCC / Clang / MSVC)
-* Python 3.x with development headers
+* C++ Compiler (GCC/Clang/MSVC)
+* Python 3.x + development headers
 * Git
 
 ### Windows (MSYS2 / MinGW64)
@@ -62,34 +62,34 @@ cmake .. -G Ninja \
 cmake --build .
 ```
 
-Or run:
+Or simply run:
 
 ```bash
 ./build.sh
 ```
 
-## 🚀 Quick Start
+## 🚀 Getting Started
 
-Visit the [Releases](https://github.com/ystemsrx/Code-Atlas/releases) page to download a precompiled binary.
+Download a precompiled binary from [Releases](https://github.com/ystemsrx/Code-Atlas/releases).
 
 ### Or Build from Source
 
 ```bash
 git clone --depth 1 https://github.com/ystemsrx/Code-Atlas.git
 cd Code-Atlas
-mkdir build && cd build
-cmake .. && cmake --build .
+mkdir build
+cd build
+cmake ..
+cmake --build .
 ```
 
-### Configure API and Model
+### Configure Model and API
 
-Copy the config template and edit it:
+Edit the `config.json` file (copy from `config_template.json` if missing):
 
 ```bash
 cp config_template.json config.json
 ```
-
-Example `config.json`:
 
 ```json
 {
@@ -110,7 +110,7 @@ Example `config.json`:
 
 ### Launch LLM Server (Optional)
 
-To use `llama.cpp`, start the server:
+For example, with `llama.cpp`:
 
 ```bash
 llama-server --jinja -fa -m model.gguf
@@ -120,53 +120,53 @@ llama-server --jinja -fa -hf user/model.gguf
 
 > Reference: [llama.cpp/function-calling.md](https://github.com/ggml-org/llama.cpp/blob/master/docs/function-calling.md)
 
-### Run Code Atlas
+### Start the Application
 
 ```bash
 ./code-atlas
 ```
 
-## 💡 Demo
+## 💡 Usage Demo
 
-Factorial calculation:
+Calculate factorial:
 
 ![calculate](https://github.com/ystemsrx/Code-Atlas/blob/master/assets/run_calculate.png?raw=true)
 
-Process listing:
+List processes:
 
-![get\_process](https://github.com/ystemsrx/Code-Atlas/blob/master/assets/run_get_process.png?raw=true)
+![get_process](https://github.com/ystemsrx/Code-Atlas/blob/master/assets/run_get_process.png?raw=true)
 
-File creation/renaming:
+Create/rename files:
 
-![create\_files](https://github.com/ystemsrx/Code-Atlas/blob/master/assets/run_create_files.png?raw=true)
+![create_files](https://github.com/ystemsrx/Code-Atlas/blob/master/assets/run_create_files.png?raw=true)
 
-## ⚙️ Configuration Overview
+## ⚙️ Configuration Details
 
-All configuration is done through `config.json`:
+Code Atlas uses a `config.json` file:
 
-* `system.prompt`: system prompt for the model
-* `model`: LLM parameters
-* `api`: base URL and key (if using remote models)
+* `system.prompt`: System prompt string
+* `model`: Model parameters
+* `api`: API base URL and key (if using cloud models)
 
-Supported execution environments:
+Supported runtime environments (automatically selected based on OS):
 
-* **Python**: Stateful, IPython-style execution
-* **PowerShell**: Windows shell scripting
-* **Batch**: Windows command-line scripts
+* Python: Stateful execution, IPython-like
+* PowerShell/Batch: For Windows
+* Bash: For Linux/macOS
 
 ## 🧩 Troubleshooting
 
-* **Build errors**: Verify CMake, Python, and dependencies
-* **Runtime issues**: Check `config.json` and LLM/API availability
-* **Slow performance**: Enable GPU acceleration or tweak model settings
+* **Build Failure**: Check CMake, Python environment, and dependencies
+* **Runtime Errors**: Ensure `config.json` is valid and model/API is accessible
+* **Low Performance**: Consider enabling GPU acceleration and adjusting model settings
 
 ## 🙌 Contributing
 
-You're welcome to contribute via Issues, Pull Requests, or feedback of any kind!
+Contributions via issues, pull requests, and feedback are highly welcome!
 
 ## 📄 License
 
-Code Atlas is licensed under the [MIT License](LICENSE).
+This project is licensed under the [MIT License](LICENSE).
 
 ## 🙏 Acknowledgments
 
@@ -177,6 +177,6 @@ Code Atlas is licensed under the [MIT License](LICENSE).
 
 ---
 
-⚠️ **Security Notice**: Code Atlas runs scripts locally. Be cautious with unknown models or prompt sources.
+⚠️ **Security Notice**: Code Atlas executes scripts locally. Be cautious when using untrusted models or prompts.
 
 ---

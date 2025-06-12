@@ -19,6 +19,8 @@
 #include <ctime>
 #endif
 
+#include "Utils.h"
+
 // --- PythonExecutor Implementation ---
 
 PythonExecutor::PythonExecutor() : main_module(nullptr), main_dict(nullptr) {
@@ -654,80 +656,84 @@ std::string execute_shell_code(const std::string& shell_name, const std::string&
 #else
 // --- ShellExecutor Implementation (Linux/macOS) ---
 std::string execute_shell_code(const std::string& shell_name, const std::string& code) {
-    // 改进的Linux/macOS实现，使用临时文件以更好地处理缩进和复杂脚本
+    // Improved Linux/macOS implementation with OS-aware shell selection
     namespace fs = std::filesystem;
     fs::path temp_dir = fs::temp_directory_path();
-    
-    // 生成唯一的临时文件名
+
+    // Generate unique temporary filename
     std::string temp_filename = "code_exec_" + std::to_string(getpid()) + "_" + std::to_string(time(nullptr));
-    
+
+    // Determine file extension and command based on shell type
     std::string ext;
+    std::string command_prefix;
+
     if (shell_name == "powershell") {
         ext = ".ps1";
-    } else {
+        command_prefix = "pwsh -ExecutionPolicy Bypass -File";
+    } else if (shell_name == "bash") {
         ext = ".sh";
+        command_prefix = "bash";
+    } else {
+        // Default to bash for unknown shell types on Unix systems
+        ext = ".sh";
+        command_prefix = "bash";
     }
-    
+
     fs::path temp_file_path = temp_dir / (temp_filename + ext);
     
     try {
-        // 写入临时文件
+        // Write to temporary file
         {
             std::ofstream temp_file(temp_file_path, std::ios::out);
             if (!temp_file.is_open()) {
                 throw std::runtime_error("Could not create temporary file for shell execution.");
             }
-            
-            // 为bash脚本添加shebang
-            if (shell_name != "powershell") {
+
+            // Add appropriate shebang for shell scripts
+            if (shell_name == "bash" || (shell_name != "powershell" && ext == ".sh")) {
                 temp_file << "#!/bin/bash\n";
             }
-            
-            // 修复缩进问题：保持原始代码的格式，不进行额外处理
-            // 确保代码以换行符结尾，避免最后一行执行问题
+
+            // Write code maintaining original format
+            // Ensure code ends with newline to avoid execution issues
             temp_file << code;
             if (!code.empty() && code.back() != '\n') {
                 temp_file << '\n';
             }
         }
         
-        // 设置执行权限
+        // Set execution permissions
         fs::permissions(temp_file_path, fs::perms::owner_read | fs::perms::owner_write | fs::perms::owner_exec);
-        
-        // 执行命令
-        std::string command;
-        if (shell_name == "powershell") {
-            command = "pwsh -ExecutionPolicy Bypass -File \"" + temp_file_path.string() + "\"";
-        } else {
-            command = "bash \"" + temp_file_path.string() + "\"";
-        }
+
+        // Build execution command
+        std::string command = command_prefix + " \"" + temp_file_path.string() + "\"";
         
         std::array<char, 128> buffer;
         std::string result;
-        command += " 2>&1"; // 重定向 stderr 到 stdout
+        command += " 2>&1"; // Redirect stderr to stdout
 
         std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(command.c_str(), "r"), pclose);
         if (!pipe) {
             fs::remove(temp_file_path);
-            throw std::runtime_error("popen() failed!");
+            throw std::runtime_error("Failed to execute command: " + command);
         }
-        
+
         while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
             result += buffer.data();
         }
-        
-        // 清理临时文件
+
+        // Clean up temporary file
         fs::remove(temp_file_path);
-        
-        // 移除末尾的换行符（如果存在）
+
+        // Remove trailing newlines if present
         while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) {
             result.pop_back();
         }
-        
+
         return result.empty() ? "[No output]" : result;
         
     } catch (...) {
-        // 确保在异常时也删除临时文件
+        // Ensure temporary file is deleted even on exception
         fs::remove(temp_file_path);
         throw;
     }

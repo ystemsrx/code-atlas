@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <csignal>
+#include <algorithm>
 #include <nlohmann/json.hpp>
 #include "Config.h"
 #include "ApiClient.h"
@@ -35,9 +36,18 @@ void main_loop() {
     g_python_executor = &python_executor; // Set global pointer
 
     std::cout << "Code Atlas started" << std::endl;
-    std::cout << "API server: " << (config.contains("api") && config["api"].contains("base_url") ? 
+    std::cout << "Running on: " << os_to_string(detect_operating_system()) << std::endl;
+    std::cout << "API server: " << (config.contains("api") && config["api"].contains("base_url") ?
                   config["api"]["base_url"].get<std::string>() : "Not configured") << std::endl;
-    std::cout << std::endl;
+
+    // Display supported shells
+    auto supported_shells = get_supported_shells();
+    std::cout << "Supported execution environments: ";
+    for (size_t i = 0; i < supported_shells.size(); ++i) {
+        if (i > 0) std::cout << ", ";
+        std::cout << supported_shells[i];
+    }
+    std::cout << std::endl << std::endl;
 
     // Prepare message history
     nlohmann::json messages = nlohmann::json::array();
@@ -99,10 +109,21 @@ void main_loop() {
 
                         if (tool_name == "python") {
                             result = python_executor.execute(code_to_run);
-                        } else if (tool_name == "powershell" || tool_name == "batch") {
-                            result = execute_shell_code(tool_name, code_to_run);
                         } else {
-                            result = "Error: Unknown tool '" + tool_name + "'";
+                            // Check if the requested shell is supported on this OS
+                            auto supported_shells = get_supported_shells();
+                            bool is_supported = std::find(supported_shells.begin(), supported_shells.end(), tool_name) != supported_shells.end();
+
+                            if (is_supported) {
+                                result = execute_shell_code(tool_name, code_to_run);
+                            } else {
+                                result = "Error: Shell '" + tool_name + "' is not supported on " + os_to_string(detect_operating_system()) +
+                                        ". Supported shells: ";
+                                for (size_t i = 0; i < supported_shells.size(); ++i) {
+                                    if (i > 0) result += ", ";
+                                    result += supported_shells[i];
+                                }
+                            }
                         }
 
                     } catch (const nlohmann::json::parse_error& e) {

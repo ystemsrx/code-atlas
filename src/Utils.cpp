@@ -1,6 +1,15 @@
 #include "Utils.h"
 #include <vector>
 #include <algorithm>
+#include <cstdlib>
+
+#ifdef _WIN32
+#include <windows.h>
+#elif defined(__APPLE__)
+#include <sys/utsname.h>
+#elif defined(__linux__)
+#include <sys/utsname.h>
+#endif
 
 std::string unescape_string(std::string s) {
     size_t pos = 0;
@@ -60,4 +69,74 @@ std::string format_output_for_display(const std::string& output) {
         }
     }
     return formatted;
+}
+
+OperatingSystem detect_operating_system() {
+#ifdef _WIN32
+    return OperatingSystem::Windows;
+#elif defined(__APPLE__)
+    return OperatingSystem::MacOS;
+#elif defined(__linux__)
+    return OperatingSystem::Linux;
+#else
+    return OperatingSystem::Unknown;
+#endif
+}
+
+std::string os_to_string(OperatingSystem os) {
+    switch (os) {
+        case OperatingSystem::Windows:
+            return "Windows";
+        case OperatingSystem::Linux:
+            return "Linux";
+        case OperatingSystem::MacOS:
+            return "macOS";
+        case OperatingSystem::Unknown:
+        default:
+            return "Unknown";
+    }
+}
+
+bool is_powershell_available() {
+    OperatingSystem os = detect_operating_system();
+
+    if (os == OperatingSystem::Windows) {
+        // On Windows, PowerShell is typically available
+        return true;
+    } else {
+        // On Linux/macOS, check if pwsh (PowerShell Core) is available
+        int result = std::system("pwsh -v > /dev/null 2>&1");
+        return (result == 0);
+    }
+}
+
+std::vector<std::string> get_supported_shells() {
+    std::vector<std::string> shells;
+    OperatingSystem os = detect_operating_system();
+
+    // Python is supported on all platforms
+    shells.push_back("python");
+
+    switch (os) {
+        case OperatingSystem::Windows:
+            shells.push_back("batch");
+            if (is_powershell_available()) {
+                shells.push_back("powershell");
+            }
+            break;
+        case OperatingSystem::Linux:
+        case OperatingSystem::MacOS:
+            shells.push_back("bash");
+            if (is_powershell_available()) {
+                shells.push_back("powershell");
+            }
+            break;
+        case OperatingSystem::Unknown:
+        default:
+            // For unknown OS, try bash as a fallback
+            shells.push_back("bash");
+            break;
+    }
+
+    return shells;
 }

@@ -6,6 +6,9 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
+#include <limits.h>
 #else
 #include <unistd.h>
 #include <limits.h>
@@ -18,11 +21,24 @@ std::filesystem::path get_executable_dir() {
     wchar_t path[MAX_PATH] = {0};
     GetModuleFileNameW(NULL, path, MAX_PATH);
     return std::filesystem::path(path).parent_path();
+#elif defined(__APPLE__)
+    // macOS implementation
+    char path[PATH_MAX];
+    uint32_t size = sizeof(path);
+    if (_NSGetExecutablePath(path, &size) == 0) {
+        return std::filesystem::path(path).parent_path();
+    } else {
+        throw std::runtime_error("Failed to get executable path on macOS");
+    }
 #else
-    // Implementation for Linux/macOS
+    // Linux implementation
     char result[PATH_MAX];
     ssize_t count = readlink("/proc/self/exe", result, PATH_MAX);
-    return std::filesystem::path(std::string(result, (count > 0) ? count : 0)).parent_path();
+    if (count > 0) {
+        return std::filesystem::path(std::string(result, count)).parent_path();
+    } else {
+        throw std::runtime_error("Failed to get executable path on Linux");
+    }
 #endif
 }
 
