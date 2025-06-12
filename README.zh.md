@@ -2,207 +2,179 @@
 
 # Code Atlas
 
-**Code Atlas** 是一个强大的 C++ 应用程序，灵感来源于 [Open Interpreter](https://github.com/OpenInterpreter/open-interpreter)。
+**Code Atlas** 是一款功能强大的本地智能代理应用，灵感源自 [Open Interpreter](https://github.com/OpenInterpreter/open-interpreter)，以 C++ 实现，支持本地执行 Python、PowerShell 和批处理脚本，集成 LLM 实现自然语言交互式编程。
 
-作为智能本地代理，它能够直接在您的机器上执行 Python、PowerShell 和批处理脚本。它与大语言模型 (LLM) 集成，提供交互式编程助手，能够理解自然语言请求并执行代码来完成任务。
+> **当前主要支持 Windows，Linux/macOS 支持正在开发中。**
 
-**目前在 Windows 上开发和测试，Linux 和 macOS 支持正在进行中。**
+## ✨ 主要特性
 
-## ✨ 特性
+* 🤖 **本地 AI 代理**：完全脱离外部 API，在本地运行
+* 💬 **可选云端接入**：支持接入兼容 OpenAI API 的远程服务
+* 🐍 **多语言执行**：支持 Python / PowerShell / 批处理脚本
+* 🔄 **持久执行状态**：Python 环境状态跨多轮交互保留
+* 🚀 **内置 LLM 支持**：可集成 llama.cpp 实现本地模型推理
+* ⚡ **流式交互 CLI**：命令行支持实时输出
+* 🛡️ **隐私优先**：本地执行，数据不出机
+* 🔧 **高度可配置**：基于 JSON 的配置系统
+* 🌐 **跨平台设计**：以 Windows 为主，逐步拓展至 Linux/macOS
 
-- **🤖 本地 AI 代理**：完全在您的机器上运行，无需外部 API 依赖
-- **💬 云端 AI 可选**：可以选择配置 OpenAI 兼容的 API
-- **🐍 多语言执行**：支持 Python、PowerShell 和批处理脚本执行
-- **🔄 持久会话**：在多次执行中保持 Python 解释器状态
-- **🚀 本地 LLM 集成**：与 llama.cpp 服务器配合，实现快速、私密的 AI 推理
-- **⚡ 实时交互**：具有流式响应的交互式命令行界面
-- **🛡️ 安全私密**：所有处理都在本地进行 - 您的代码永远不会离开您的机器
-- **🔧 可配置**：灵活的基于 JSON 的配置系统
-- **🌐 跨平台**：主要支持 Windows，后续将完整支持 Linux/macOS
+## 📋 安装要求
 
-## 📋 先决条件
+### 系统需求
 
-### 系统要求
-- **操作系统**：Windows 10/11（主要）、Linux 或 macOS
-- **CPU**：现代 x64 处理器（推荐支持 CUDA 的 GPU 以获得更快的推理速度）
-- **内存**：最少 8GB（推荐 16GB+ 用于较大模型）
-- **存储**：至少 10GB 可用空间用于模型和依赖项
+* **操作系统**：Windows 10/11（首选）、Linux、macOS
+* **CPU**：x64 架构，建议具备支持 CUDA 的 GPU
+* **内存**：至少 8GB（推荐 16GB+）
+* **存储**：10GB 可用空间
 
-### 依赖项
-- **CMake** 3.16 或更高版本
-- **C++17 兼容编译器**（GCC、Clang 或 MSVC）
-- **Python 3.x** 及开发头文件
-- **Git**
+### 必要依赖
 
-#### Windows (MSYS2/MinGW64)
+* CMake ≥ 3.16
+* C++17 编译器（GCC/Clang/MSVC）
+* Python 3.x + 开发头文件
+* Git
+
+### Windows（MSYS2 / MinGW64）
+
 ```bash
-# 从 https://www.msys2.org/ 安装 MSYS2
-# 在 mingw64 中执行
-pacman -Syu
-pacman -Su
-# 重启后执行以下操作：
-# 安装依赖项：
+pacman -Syu && pacman -Su
 pacman -S --needed \
-    mingw-w64-x86_64-toolchain \
-    mingw-w64-x86_64-cmake \
-    mingw-w64-x86_64-cpr \
-    mingw-w64-x86_64-nlohmann-json \
-    mingw-w64-x86_64-python
+  mingw-w64-x86_64-toolchain \
+  mingw-w64-x86_64-cmake \
+  mingw-w64-x86_64-cpr \
+  mingw-w64-x86_64-nlohmann-json \
+  mingw-w64-x86_64-python
+```
+
+### Linux 示例
+
+```bash
+sudo apt update && sudo apt install -y ninja-build
+pip3 install --upgrade "conan>=1.60,<2"
+
+mkdir -p build && cd build
+conan install .. --build=missing
+
+cmake .. -G Ninja \
+  -DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake \
+  -DCMAKE_BUILD_TYPE=Release
+
+cmake --build .
+```
+
+或直接执行：
+
+```bash
+./build.sh
 ```
 
 ## 🚀 快速开始
 
-你可以直接前往 [Realease](https://github.com/ystemsrx/Code-Atlas/releases) 获取我们已编译好的可执行文件。
+可前往 [Releases](https://github.com/ystemsrx/Code-Atlas/releases) 获取预编译版本。
 
-或者从源码构建：
+### 或从源码构建
 
-### 1. 克隆仓库
 ```bash
 git clone --depth 1 https://github.com/ystemsrx/Code-Atlas.git
-cd code-atlas
+cd Code-Atlas
+mkdir build && cd build
+cmake .. && cmake --build .
 ```
 
-### 2. 构建项目
+### 配置模型与 API
+
+编辑 `config.json` 文件（可从 `config_template.json` 拷贝）：
 
 ```bash
-mkdir build
-cd build
-cmake .. -G "MinGW Makefiles"
-cmake --build .
+cp config_template.json config.json
 ```
 
-### 3. 配置应用程序
-
-编辑 `config.json` 以配置您的 LLM 设置：
 ```json
 {
-    "api": {
-        "base_url": "https://api.openai.com/v1/chat/completions",
-        "key": "sk-..."
-    },
-    "model": {
-        "name": "gpt-4o",
-        "parameters": {
-            "temperature": 0.2,
-            "top_p": 0.9,
-            "max_tokens": 4096,
-            "frequency_penalty": 0.0,
-            "presence_penalty": 0.6
-        }
+  "api": {
+    "base_url": "https://api.openai.com/v1/chat/completions",
+    "key": "sk-..."
+  },
+  "model": {
+    "name": "gpt-4o",
+    "parameters": {
+      "temperature": 0.2,
+      "top_p": 0.9,
+      "max_tokens": 4096
     }
+  }
 }
 ```
 
-### 4. 启动 LLM 服务器（可选）
-如果使用包含的 [llama.cpp](https://github.com/ggml-org/llama.cpp) 服务器：
+### 启动 LLM 服务器（可选）
+
+如使用 llama.cpp：
+
 ```bash
 llama-server --jinja -fa -m model.gguf
-
-# 或者使用以下命令 （这将从HuggingFace中下载模型）：
-
+# 或：
 llama-server --jinja -fa -hf user/model.gguf
 ```
 
-请注意，由于涉及函数调用的兼容性，以上命令可能在不同的模型上会有改动，详情见 [llama.cpp/function-calling.md](https://github.com/ggml-org/llama.cpp/blob/master/docs/function-calling.md)
+> 参考：[llama.cpp/function-calling.md](https://github.com/ggml-org/llama.cpp/blob/master/docs/function-calling.md)
 
-### 5. 运行 Code Atlas
+### 启动应用
+
 ```bash
 ./code-atlas
 ```
 
-## 💡 使用示例
+## 💡 使用演示
 
-### 基本交互
-
-> 计算10的阶乘
+计算阶乘：
 
 ![calculate](https://github.com/ystemsrx/Code-Atlas/blob/master/assets/run_calculate.png?raw=true)
 
-> 列出 Windows 上所有正在运行的进程
+列出进程：
 
-![get_process](https://github.com/ystemsrx/Code-Atlas/blob/master/assets/run_get_process.png?raw=true)
+![get\_process](https://github.com/ystemsrx/Code-Atlas/blob/master/assets/run_get_process.png?raw=true)
 
-> 创建/重命名文件
+创建/重命名文件：
 
-![get_process](https://github.com/ystemsrx/Code-Atlas/blob/master/assets/run_create_files.png?raw=true)
+![create\_files](https://github.com/ystemsrx/Code-Atlas/blob/master/assets/run_create_files.png?raw=true)
 
-## 🔧 配置
+## ⚙️ 配置详情
 
-### 配置文件结构
+Code Atlas 配置基于 `config.json`：
 
-配置文件的模板在根目录的config_template.json中，需复制该模板创建最终生效的 config.json 文件：
-```bash
-cp config-template.json config.json
-```
+* `system.prompt`：系统提示词
+* `model`：模型参数
+* `api`：API 地址与密钥（如使用云模型）
 
-`config.json` 文件控制 Code Atlas 的所有行为：
+支持三种执行环境：
 
-```json
-{
-    "system": {
-        "prompt": "You are ..."
-    },
-    "model": {
-        "name": "Model name",
-        "parameters": {
-            "temperature": 0.2,
-            "top_p": 0.9,
-            "max_tokens": 4096,
-            "frequency_penalty": 0.0,
-            "presence_penalty": 0.6
-        }
-    },
-    "api": {
-        "base_url": "http://localhost:8080/v1/chat/completions",
-        "key": "如果使用云端 API，可能需要填入密钥"
-    }
-}
-```
+* Python：支持状态保持，类 IPython
+* PowerShell：适用于 Windows
+* Batch：Windows 批处理脚本
 
-### 工具配置
-Code Atlas 支持三种执行环境：
-- **Python**：具有持久状态的完整类 IPython 解释器
-- **PowerShell**：Windows PowerShell 脚本执行
-- **Batch**：Windows 批处理/CMD 脚本执行
+## 🧩 故障排查
 
-## 🤝 贡献
+* **构建失败**：检查 CMake / Python 环境及依赖项
+* **运行异常**：确认 `config.json` 正确，模型/API 可用
+* **性能低**：考虑启用 GPU，调整模型参数
 
-我们欢迎提出建议和改进，可以通过以下方式参与：
+## 🙌 参与贡献
 
-- 提交 Issue
-- 提交 Pull Request
-- 分享你的使用经验
-
-## 🐛 故障排除
-
-### 常见问题
-
-**构建失败**：
-- 确保所有依赖项都已正确安装
-- 检查 CMake 版本兼容性（3.16+）
-- 验证 Python 开发头文件是否可用
-
-**运行时错误**：
-- 检查 `config.json` 语法和路径
-- 确保 LLM 服务器正在运行且可访问
-- 验证 Python 解释器是否正确嵌入
-
-**性能问题**：
-- 考虑为 LLM 推理使用 GPU 加速
-- 调整模型参数（temperature、max_tokens）
-- 在执行期间监控系统资源
+欢迎通过 Issue、PR、反馈经验来参与项目建设！
 
 ## 📄 许可证
 
-本项目采用 MIT 许可证 - 详情请参阅 [LICENSE](LICENSE) 文件。
+本项目基于 [MIT License](LICENSE)。
 
-## 🙏 致谢
+## 🙏 鸣谢
 
-- **llama.cpp** - 提供出色的本地 LLM 推理能力
-- **nlohmann/json** - 在 C++ 中提供强大的 JSON 处理
-- **cpr** - 提供 HTTP 客户端功能
-- **Python** - 提供嵌入式解释器能力
+* [llama.cpp](https://github.com/ggml-org/llama.cpp)
+* [nlohmann/json](https://github.com/nlohmann/json)
+* [cpr](https://github.com/libcpr/cpr)
+* [Python](https://www.python.org)
 
 ---
 
-**⚠️ 安全提示**：Code Atlas 直接在您的系统上执行代码。仅在受信任的模型和安全环境中使用。在生产环境中执行之前，请始终检查生成的代码。
+⚠️ **安全提示**：Code Atlas 会在本地执行脚本，请谨慎对待来源不明的模型或提示词。
+
+---

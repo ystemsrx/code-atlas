@@ -2,217 +2,181 @@
 
 # Code Atlas
 
-**Code Atlas** is a powerful C++ application inspired by [Open Interpreter](https://github.com/OpenInterpreter/open-interpreter).
+**Code Atlas** is a powerful local intelligent agent inspired by [Open Interpreter](https://github.com/OpenInterpreter/open-interpreter). Written in C++, it supports local execution of Python, PowerShell, and batch scripts, and integrates with large language models (LLMs) for natural language-driven interactive programming.
 
-As an intelligent local agent, it can directly execute Python, PowerShell, and Batch scripts on your machine. Integrated with large language models (LLMs), it provides an interactive programming assistant that understands natural language requests and executes code to accomplish tasks.
-
-**Currently developed and tested on Windows. Linux and macOS support is in progress.**
+> **Currently optimized for Windows. Linux and macOS support is under active development.**
 
 ## ✨ Features
 
-* **🤖 Local AI Agent**: Fully runs on your machine, no external API dependency
-* **💬 Cloud AI Optional**: Can optionally connect to OpenAI-compatible APIs
-* **🐍 Multi-language Execution**: Supports Python, PowerShell, and Batch scripts
-* **🔄 Persistent Sessions**: Maintains Python interpreter state across executions
-* **🚀 Local LLM Integration**: Works with `llama.cpp` server for fast and private inference
-* **⚡ Real-time Interaction**: Interactive CLI with streaming responses
-* **🛡️ Secure & Private**: All processing is local – your code never leaves your machine
-* **🔧 Configurable**: Flexible JSON-based configuration system
-* **🌐 Cross-platform**: Primarily supports Windows, full Linux/macOS support coming soon
+* 🤖 **Local AI Agent**: Runs entirely offline with no external API dependency
+* 💬 **Optional Cloud Integration**: Compatible with OpenAI-style APIs for cloud inference
+* 🐍 **Multi-language Execution**: Supports Python, PowerShell, and batch scripting
+* 🔄 **Persistent Interpreter State**: Maintains Python context across multiple interactions
+* 🚀 **Built-in LLM Support**: Local inference enabled via llama.cpp
+* ⚡ **Streaming CLI Interface**: Real-time command-line interaction
+* 🛡️ **Privacy-First**: Your data never leaves your device
+* 🔧 **Highly Configurable**: JSON-based settings and customization
+* 🌐 **Cross-platform Design**: Initially Windows-focused, expanding to Linux/macOS
 
-## 📋 Prerequisites
+## 📋 System Requirements
 
-### System Requirements
+### OS & Hardware
 
-* **Operating System**: Windows 10/11 (primary), Linux or macOS
-* **CPU**: Modern x64 processor (CUDA-capable GPU recommended for faster inference)
-* **Memory**: Minimum 8GB (16GB+ recommended for large models)
-* **Storage**: At least 10GB free space for models and dependencies
+* **OS**: Windows 10/11 (preferred), Linux, or macOS
+* **CPU**: x64 architecture (CUDA-enabled GPU recommended)
+* **RAM**: Minimum 8GB (16GB+ recommended)
+* **Disk**: At least 10GB free storage
 
-### Dependencies
+### Core Dependencies
 
-* **CMake** 3.16 or newer
-* **C++17-compatible compiler** (GCC, Clang, or MSVC)
-* **Python 3.x** with development headers
-* **Git**
+* CMake ≥ 3.16
+* C++17-compliant compiler (GCC / Clang / MSVC)
+* Python 3.x with development headers
+* Git
 
-#### Windows (MSYS2/MinGW64)
+### Windows (MSYS2 / MinGW64)
 
 ```bash
-# Install MSYS2 from https://www.msys2.org/
-# Use the mingw64 environment
-pacman -Syu
-pacman -Su
-# After restarting, install dependencies:
+pacman -Syu && pacman -Su
 pacman -S --needed \
-    mingw-w64-x86_64-toolchain \
-    mingw-w64-x86_64-cmake \
-    mingw-w64-x86_64-cpr \
-    mingw-w64-x86_64-nlohmann-json \
-    mingw-w64-x86_64-python
+  mingw-w64-x86_64-toolchain \
+  mingw-w64-x86_64-cmake \
+  mingw-w64-x86_64-cpr \
+  mingw-w64-x86_64-nlohmann-json \
+  mingw-w64-x86_64-python
 ```
 
-## 🚀 Getting Started
-
-You can directly download prebuilt executables from the [Releases](https://github.com/ystemsrx/Code-Atlas/releases) page.
-
-Or build from source:
-
-### 1. Clone the Repository
+### Linux Example
 
 ```bash
-git clone --depth 1 https://github.com/ystemsrx/Code-Atlas.git
-cd code-atlas
-```
+sudo apt update && sudo apt install -y ninja-build
+pip3 install --upgrade "conan>=1.60,<2"
 
-### 2. Build the Project
+mkdir -p build && cd build
+conan install .. --build=missing
 
-```bash
-mkdir build
-cd build
-cmake .. -G "MinGW Makefiles"
+cmake .. -G Ninja \
+  -DCMAKE_TOOLCHAIN_FILE=conan_toolchain.cmake \
+  -DCMAKE_BUILD_TYPE=Release
+
 cmake --build .
 ```
 
-### 3. Configure the Application
+Or run:
 
-Edit `config.json` to configure your LLM settings:
+```bash
+./build.sh
+```
+
+## 🚀 Quick Start
+
+Visit the [Releases](https://github.com/ystemsrx/Code-Atlas/releases) page to download a precompiled binary.
+
+### Or Build from Source
+
+```bash
+git clone --depth 1 https://github.com/ystemsrx/Code-Atlas.git
+cd Code-Atlas
+mkdir build && cd build
+cmake .. && cmake --build .
+```
+
+### Configure API and Model
+
+Copy the config template and edit it:
+
+```bash
+cp config_template.json config.json
+```
+
+Example `config.json`:
 
 ```json
 {
-    "api": {
-        "base_url": "https://api.openai.com/v1/chat/completions",
-        "key": "sk-..."
-    },
-    "model": {
-        "name": "gpt-4o",
-        "parameters": {
-            "temperature": 0.2,
-            "top_p": 0.9,
-            "max_tokens": 4096,
-            "frequency_penalty": 0.0,
-            "presence_penalty": 0.6
-        }
+  "api": {
+    "base_url": "https://api.openai.com/v1/chat/completions",
+    "key": "sk-..."
+  },
+  "model": {
+    "name": "gpt-4o",
+    "parameters": {
+      "temperature": 0.2,
+      "top_p": 0.9,
+      "max_tokens": 4096
     }
+  }
 }
 ```
 
-### 4. Launch LLM Server (Optional)
+### Launch LLM Server (Optional)
 
-If you're using the included [llama.cpp](https://github.com/ggml-org/llama.cpp) server:
+To use `llama.cpp`, start the server:
 
 ```bash
 llama-server --jinja -fa -m model.gguf
-
-# Or download a model from HuggingFace and run:
+# or:
 llama-server --jinja -fa -hf user/model.gguf
 ```
 
-> ⚠️ Model-specific differences may apply due to function-calling compatibility. See [llama.cpp/function-calling.md](https://github.com/ggml-org/llama.cpp/blob/master/docs/function-calling.md) for details.
+> Reference: [llama.cpp/function-calling.md](https://github.com/ggml-org/llama.cpp/blob/master/docs/function-calling.md)
 
-### 5. Run Code Atlas
+### Run Code Atlas
 
 ```bash
 ./code-atlas
 ```
 
-## 💡 Usage Examples
+## 💡 Demo
 
-### Basic Interactions
+Factorial calculation:
 
-> Calculate factorial of 10
-> ![calculate](https://github.com/ystemsrx/Code-Atlas/blob/master/assets/run_calculate.png?raw=true)
+![calculate](https://github.com/ystemsrx/Code-Atlas/blob/master/assets/run_calculate.png?raw=true)
 
-> List all running processes on Windows
-> ![get_process](https://github.com/ystemsrx/Code-Atlas/blob/master/assets/run_get_process.png?raw=true)
+Process listing:
 
-> Create/rename files
-> ![get_process](https://github.com/ystemsrx/Code-Atlas/blob/master/assets/run_create_files.png?raw=true)
+![get\_process](https://github.com/ystemsrx/Code-Atlas/blob/master/assets/run_get_process.png?raw=true)
 
-## 🔧 Configuration
+File creation/renaming:
 
-### Config File Structure
+![create\_files](https://github.com/ystemsrx/Code-Atlas/blob/master/assets/run_create_files.png?raw=true)
 
-The config template is located in the root directory as `config_template.json`. Copy it to create your working configuration:
+## ⚙️ Configuration Overview
 
-```bash
-cp config-template.json config.json
-```
+All configuration is done through `config.json`:
 
-The `config.json` file controls all behaviors of Code Atlas:
+* `system.prompt`: system prompt for the model
+* `model`: LLM parameters
+* `api`: base URL and key (if using remote models)
 
-```json
-{
-    "system": {
-        "prompt": "You are ..."
-    },
-    "model": {
-        "name": "Model name",
-        "parameters": {
-            "temperature": 0.2,
-            "top_p": 0.9,
-            "max_tokens": 4096,
-            "frequency_penalty": 0.0,
-            "presence_penalty": 0.6
-        }
-    },
-    "api": {
-        "base_url": "http://localhost:8080/v1/chat/completions",
-        "key": "Required if using a cloud API"
-    }
-}
-```
+Supported execution environments:
 
-### Tool Configuration
+* **Python**: Stateful, IPython-style execution
+* **PowerShell**: Windows shell scripting
+* **Batch**: Windows command-line scripts
 
-Code Atlas supports three execution environments:
+## 🧩 Troubleshooting
 
-* **Python**: A persistent IPython-like interpreter
-* **PowerShell**: Native PowerShell script execution on Windows
-* **Batch**: Windows CMD/batch script execution
+* **Build errors**: Verify CMake, Python, and dependencies
+* **Runtime issues**: Check `config.json` and LLM/API availability
+* **Slow performance**: Enable GPU acceleration or tweak model settings
 
-## 🤝 Contributing
+## 🙌 Contributing
 
-We welcome suggestions and contributions. You can participate by:
-
-* Opening Issues
-* Submitting Pull Requests
-* Sharing your use cases and feedback
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-**Build Failures**:
-
-* Ensure all dependencies are installed correctly
-* Check CMake version compatibility (3.16+)
-* Verify Python development headers are available
-
-**Runtime Errors**:
-
-* Check syntax and path of `config.json`
-* Ensure LLM server is running and accessible
-* Validate Python interpreter embedding is functional
-
-**Performance Issues**:
-
-* Consider GPU acceleration for LLM inference
-* Tune model parameters (e.g., `temperature`, `max_tokens`)
-* Monitor system resources during execution
+You're welcome to contribute via Issues, Pull Requests, or feedback of any kind!
 
 ## 📄 License
 
-This project is licensed under the MIT License – see the [LICENSE](LICENSE) file for details.
+Code Atlas is licensed under the [MIT License](LICENSE).
 
-## 🙏 Acknowledgements
+## 🙏 Acknowledgments
 
-* **llama.cpp** – For robust local LLM inference
-* **nlohmann/json** – High-quality JSON parsing for C++
-* **cpr** – Simple and effective HTTP client library
-* **Python** – Embedded interpreter powering the Python backend
+* [llama.cpp](https://github.com/ggml-org/llama.cpp)
+* [nlohmann/json](https://github.com/nlohmann/json)
+* [cpr](https://github.com/libcpr/cpr)
+* [Python](https://www.python.org)
 
 ---
 
-**⚠️ Security Warning**:
-Code Atlas executes code directly on your system. Use only with trusted models and in secure environments. Always review the generated code before running in production.
+⚠️ **Security Notice**: Code Atlas runs scripts locally. Be cautious with unknown models or prompt sources.
+
+---
