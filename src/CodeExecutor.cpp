@@ -223,98 +223,127 @@ std::string PythonExecutor::check_python_error() {
 
 
 std::string PythonExecutor::execute(const std::string& code) {
-    // 处理代码，移除前后空白字符
+    // 1. Trim leading/trailing whitespace from the code
     std::string trimmed_code = code;
-    
     size_t start = trimmed_code.find_first_not_of(" \t\n\r");
     if (start != std::string::npos) {
         trimmed_code = trimmed_code.substr(start);
         size_t end = trimmed_code.find_last_not_of(" \t\n\r");
-        if (end != std::string::npos) {
-            trimmed_code = trimmed_code.substr(0, end + 1);
-        }
+        trimmed_code = (end != std::string::npos) ? trimmed_code.substr(0, end + 1) : "";
+    } else {
+        trimmed_code.clear();
     }
     
     if (trimmed_code.empty()) {
         return "[No output]";
     }
-    
-    // 使用更简单的方法捕获输出
-    std::string capture_and_execute = 
-        "import sys\n"
-        "import io\n"
-        "from contextlib import redirect_stdout, redirect_stderr\n"
-        "captured_stdout = io.StringIO()\n"
-        "captured_stderr = io.StringIO()\n"
-        "result_value = None\n"
-        "try:\n"
-        "    with redirect_stdout(captured_stdout), redirect_stderr(captured_stderr):\n";
-    
-    // 添加用户代码，适当缩进
-    std::istringstream iss(trimmed_code);
-    std::string line;
-    while (std::getline(iss, line)) {
-        capture_and_execute += "        " + line + "\n";
+
+    // 2. Set the user's code as a variable in the Python interpreter's main dictionary
+    PyObject* user_code_obj = PyUnicode_FromString(trimmed_code.c_str());
+    if (!user_code_obj) {
+        return "Error: Failed to create Python string from user code.";
     }
-    
-    capture_and_execute += 
-        "except Exception as e:\n"
-        "    captured_stderr.write(str(e) + '\\n')\n";
-    
-    // 执行包装后的代码
-    PyObject* result = PyRun_String(capture_and_execute.c_str(), Py_file_input, main_dict, main_dict);
-            if (!result) {
-        return "Execution failed: " + check_python_error();
-            }
-            Py_XDECREF(result);
-    
-    // 获取捕获的输出
+    // PyDict_SetItemString returns 0 on success, -1 on failure.
+    if (PyDict_SetItemString(main_dict, "user_code", user_code_obj) != 0) {
+        Py_DECREF(user_code_obj);
+        return "Error: Failed to set user_code variable in Python context.";
+    }
+    Py_DECREF(user_code_obj); // main_dict now owns the reference
+
+    // 3. Define the Python wrapper script
+    const char* python_script = R"#(
+import sys
+import io
+import ast
+from contextlib import redirect_stdout, redirect_stderr
+
+# The user_code variable is pre-set in globals() by the C++ host.
+
+captured_stdout = io.StringIO()
+captured_stderr = io.StringIO()
+
+with redirect_stdout(captured_stdout), redirect_stderr(captured_stderr):
+    try:
+        # Attempt to parse the user's code into an Abstract Syntax Tree (AST)
+        tree = ast.parse(user_code, mode='exec')
+        
+        # Check if the AST body is not empty and the last statement is an expression
+        if tree.body and isinstance(tree.body[-1], ast.Expr):
+            # Separate the last expression from the rest of the statements
+            last_expr_node = tree.body.pop()
+            
+            # Execute all statements before the final expression
+            if tree.body:
+                exec_code_obj = compile(tree, '<string>', 'exec')
+                exec(exec_code_obj, globals())
+            
+            # Evaluate the final expression
+            eval_code_obj = compile(ast.Expression(last_expr_node.value), '<string>', 'eval')
+            result = eval(eval_code_obj, globals())
+            
+            # If the expression yields a result, print its representation
+            if result is not None:
+                print(repr(result))
+        else:
+            # If the code is not an expression-terminated script, execute it as a whole.
+            exec(user_code, globals())
+            
+    except Exception:
+        # If any exception occurs (e.g., syntax error in ast.parse),
+        # fall back to executing the code directly. This can handle
+        # code snippets that are not valid modules but are otherwise executable.
+        try:
+            exec(user_code, globals())
+        except Exception:
+            # If execution still fails, capture the traceback.
+            import traceback
+            traceback.print_exc()
+
+# Store the captured output in global variables for C++ to retrieve
+globals()['stdout_result'] = captured_stdout.getvalue()
+globals()['stderr_result'] = captured_stderr.getvalue()
+)#";
+
+    // 4. Execute the wrapper script
+    PyObject* result_obj = PyRun_String(python_script, Py_file_input, main_dict, main_dict);
+    if (!result_obj) {
+        PyDict_DelItemString(main_dict, "user_code"); // Clean up
+        return "Execution wrapper failed: " + check_python_error();
+    }
+    Py_XDECREF(result_obj);
+
+    // 5. Retrieve stdout and stderr from Python
     std::string final_output;
     
-    // 获取stdout
-    PyObject* stdout_obj = PyRun_String("captured_stdout.getvalue()", Py_eval_input, main_dict, main_dict);
-    if (stdout_obj) {
-        const char* stdout_str = PyUnicode_AsUTF8(stdout_obj);
+    // Retrieve stdout
+    PyObject* stdout_val = PyDict_GetItemString(main_dict, "stdout_result");
+    if (stdout_val && PyUnicode_Check(stdout_val)) {
+        const char* stdout_str = PyUnicode_AsUTF8(stdout_val);
         if (stdout_str && strlen(stdout_str) > 0) {
             final_output += stdout_str;
         }
-        Py_DECREF(stdout_obj);
     }
     
-    // 获取stderr
-    PyObject* stderr_obj = PyRun_String("captured_stderr.getvalue()", Py_eval_input, main_dict, main_dict);
-    if (stderr_obj) {
-        const char* stderr_str = PyUnicode_AsUTF8(stderr_obj);
+    // Retrieve stderr
+    PyObject* stderr_val = PyDict_GetItemString(main_dict, "stderr_result");
+    if (stderr_val && PyUnicode_Check(stderr_val)) {
+        const char* stderr_str = PyUnicode_AsUTF8(stderr_val);
         if (stderr_str && strlen(stderr_str) > 0) {
-            if (!final_output.empty()) final_output += "\n";
+            if (!final_output.empty() && final_output.back() != '\n') {
+                final_output += "\n";
+            }
             final_output += stderr_str;
         }
-        Py_DECREF(stderr_obj);
     }
     
-    // 对于简单表达式，尝试获取其值
-    if (final_output.empty()) {
-        // 检查是否是简单表达式
-        if (trimmed_code.find('\n') == std::string::npos && 
-            trimmed_code.find('=') == std::string::npos &&
-            trimmed_code.find("print") != 0 &&
-            trimmed_code.find("import") != 0) {
-            
-            PyObject* expr_result = PyRun_String(trimmed_code.c_str(), Py_eval_input, main_dict, main_dict);
-            if (expr_result) {
-                PyObject* repr_obj = PyObject_Repr(expr_result);
-                if (repr_obj) {
-                    const char* repr_str = PyUnicode_AsUTF8(repr_obj);
-                    if (repr_str) {
-                        final_output = repr_str;
-                    }
-                    Py_DECREF(repr_obj);
-                }
-                Py_DECREF(expr_result);
-            } else {
-                PyErr_Clear();
-            }
-        }
+    // 6. Clean up variables from the Python context
+    PyDict_DelItemString(main_dict, "user_code");
+    PyDict_DelItemString(main_dict, "stdout_result");
+    PyDict_DelItemString(main_dict, "stderr_result");
+
+    // Trim trailing newline from the final output for cleaner display
+    if (!final_output.empty() && final_output.back() == '\n') {
+        final_output.pop_back();
     }
 
     return final_output.empty() ? "[No output]" : final_output;
