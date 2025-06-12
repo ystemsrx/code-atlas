@@ -30,8 +30,17 @@ sudo apt update && sudo apt install -y \
 echo "Installing Conan package manager..."
 pip3 install --upgrade "conan>=1.60,<2"
 
-# Configure Conan profile for C++11 ABI
-echo "Configuring Conan profile..."
+# Ensure the default Conan profile exists, creating it if necessary
+echo "Ensuring Conan default profile exists..."
+if ! conan profile show default > /dev/null 2>&1; then
+    echo "Default profile not found. Creating new default profile..."
+    conan profile new default --detect
+else
+    echo "Default profile found."
+fi
+
+# Update Conan default profile to use libstdc++11 to avoid GCC ABI warnings
+echo "Updating Conan default profile to use libstdc++11..."
 conan profile update settings.compiler.libcxx=libstdc++11 default
 
 # Create build directory
