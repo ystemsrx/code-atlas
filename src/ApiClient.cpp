@@ -199,6 +199,7 @@ ApiResponse ApiClient::send_message(const nlohmann::json& messages) {
                                 if (state.code_buffer.find("{\"code\":\"") != std::string::npos) {
                                     state.in_code_block = true;
                                     std::cout << Color::LIGHT_PINK;
+                                    std::cout << "\n"; // Add an extra newline for tool code
                                 }
                             }
                             

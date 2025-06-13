@@ -109,7 +109,7 @@ void main_loop() {
 
                         // The tool call header and code are now streamed by ApiClient.
                         // We just print the output section header.
-                        std::cout << "\n\n--- Output ---" << std::endl;
+                        std::cout << "\n\n--- Output ---\n" << std::endl;
 
                         if (tool_name == "python") {
                             result = python_executor.execute(code_to_run);
