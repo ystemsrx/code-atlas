@@ -65,7 +65,35 @@ ApiClient::ApiClient(const nlohmann::json& config) {
 
 ApiResponse ApiClient::send_message(const nlohmann::json& messages) {
     nlohmann::json payload = base_payload;
-    payload["messages"] = messages;
+    nlohmann::json modified_messages = messages;
+    
+    // 检查是否有系统消息，如果有，根据操作系统添加特定文本
+    if (!modified_messages.empty() && modified_messages[0].contains("role") && 
+        modified_messages[0]["role"] == "system" && modified_messages[0].contains("content")) {
+        
+        OperatingSystem current_os = detect_operating_system();
+        std::string os_info;
+        
+        switch (current_os) {
+            case OperatingSystem::Windows:
+                os_info = "\n\n**You are currently working on Windows.**";
+                break;
+            case OperatingSystem::Linux:
+                os_info = "\n\n**You are currently working on Linux.**";
+                break;
+            case OperatingSystem::MacOS:
+                os_info = "\n\n**You are currently working on macOS.**";
+                break;
+            default:
+                os_info = "\n\n**You are currently working on an unknown operating system.**";
+                break;
+        }
+        
+        // 在系统提示词末尾添加操作系统信息
+        modified_messages[0]["content"] = modified_messages[0]["content"].get<std::string>() + os_info;
+    }
+    
+    payload["messages"] = modified_messages;
 
     // --- 流式处理的状态变量 ---
     std::string line_buffer;
