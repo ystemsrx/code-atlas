@@ -6,6 +6,7 @@
 #include <fstream>
 #include <filesystem>
 #include <stdexcept>
+#include <nlohmann/json.hpp>
 
 // Platform-specific includes for subprocess execution
 #ifdef _WIN32
@@ -235,7 +236,10 @@ std::string PythonExecutor::execute(const std::string& code) {
     }
     
     if (trimmed_code.empty()) {
-        return "[No output]";
+        nlohmann::json result_json;
+        result_json["status"] = "success";
+        result_json["output"] = "[No code to execute]";
+        return result_json.dump();
     }
 
     // 2. Set the user's code as a variable in the Python interpreter's main dictionary
@@ -306,34 +310,32 @@ globals()['stderr_result'] = captured_stderr.getvalue()
 
     // 4. Execute the wrapper script
     PyObject* result_obj = PyRun_String(python_script, Py_file_input, main_dict, main_dict);
+    nlohmann::json result_json;
+
     if (!result_obj) {
         PyDict_DelItemString(main_dict, "user_code"); // Clean up
-        return "Execution wrapper failed: " + check_python_error();
+        result_json["status"] = "error";
+        result_json["output"] = "Execution wrapper failed: " + check_python_error();
+        return result_json.dump();
     }
     Py_XDECREF(result_obj);
 
     // 5. Retrieve stdout and stderr from Python
-    std::string final_output;
+    std::string stdout_str;
+    std::string stderr_str;
     
     // Retrieve stdout
     PyObject* stdout_val = PyDict_GetItemString(main_dict, "stdout_result");
     if (stdout_val && PyUnicode_Check(stdout_val)) {
-        const char* stdout_str = PyUnicode_AsUTF8(stdout_val);
-        if (stdout_str && strlen(stdout_str) > 0) {
-            final_output += stdout_str;
-        }
+        const char* s_str = PyUnicode_AsUTF8(stdout_val);
+        if (s_str) stdout_str = s_str;
     }
     
     // Retrieve stderr
     PyObject* stderr_val = PyDict_GetItemString(main_dict, "stderr_result");
     if (stderr_val && PyUnicode_Check(stderr_val)) {
-        const char* stderr_str = PyUnicode_AsUTF8(stderr_val);
-        if (stderr_str && strlen(stderr_str) > 0) {
-            if (!final_output.empty() && final_output.back() != '\n') {
-                final_output += "\n";
-            }
-            final_output += stderr_str;
-        }
+        const char* s_str = PyUnicode_AsUTF8(stderr_val);
+        if (s_str) stderr_str = s_str;
     }
     
     // 6. Clean up variables from the Python context
@@ -341,12 +343,21 @@ globals()['stderr_result'] = captured_stderr.getvalue()
     PyDict_DelItemString(main_dict, "stdout_result");
     PyDict_DelItemString(main_dict, "stderr_result");
 
-    // Trim trailing newline from the final output for cleaner display
-    if (!final_output.empty() && final_output.back() == '\n') {
-        final_output.pop_back();
+    // 7. Format output
+    if (!stderr_str.empty()) {
+        result_json["status"] = "error";
+        std::string combined_output = stdout_str;
+        if (!stdout_str.empty() && !stderr_str.empty()) {
+            combined_output += "\n--- STDERR ---\n";
+        }
+        combined_output += stderr_str;
+        result_json["output"] = combined_output;
+    } else {
+        result_json["status"] = "success";
+        result_json["output"] = stdout_str.empty() ? "[No output]" : stdout_str;
     }
 
-    return final_output.empty() ? "[No output]" : final_output;
+    return result_json.dump();
 }
 
 // --- ShellExecutor Implementation (Windows) ---
@@ -521,43 +532,47 @@ std::string execute_shell_code(const std::string& shell_name, const std::string&
         
         fs::remove(final_temp_path);
         
+        nlohmann::json result_json;
         // 处理输出结果
         std::string result_str;
         if (!stdout_str.empty()) {
-            // 对于batch脚本，需要进行编码转换
 #ifdef _WIN32
             if (shell_name == "batch") {
-                stdout_str = sanitize_output_for_utf8(stdout_str);
+                result_str = sanitize_output_for_utf8(stdout_str);
+            } else {
+                result_str = stdout_str;
             }
+#else
+            result_str = stdout_str;
 #endif
-            result_str += stdout_str;
-            // 移除末尾的换行符（如果存在）
-            while (!result_str.empty() && (result_str.back() == '\n' || result_str.back() == '\r')) {
-                result_str.pop_back();
-            }
         }
         
         if (!stderr_str.empty()) {
-            // 对于batch脚本，需要进行编码转换
 #ifdef _WIN32
             if (shell_name == "batch") {
                 stderr_str = sanitize_output_for_utf8(stderr_str);
             }
 #endif
-            if (!result_str.empty()) result_str += "\n";
-            result_str += "Error: " + stderr_str;
-            // 移除末尾的换行符（如果存在）
-            while (!result_str.empty() && (result_str.back() == '\n' || result_str.back() == '\r')) {
-                result_str.pop_back();
+        }
+
+        if (exit_code != 0 || !stderr_str.empty()) {
+            result_json["status"] = "error";
+            std::string error_output = result_str;
+            if (!stderr_str.empty()) {
+                if (!error_output.empty()) error_output += "\n--- STDERR ---\n";
+                error_output += stderr_str;
             }
+            if (exit_code != 0) {
+                 if (!error_output.empty()) error_output += "\n";
+                 error_output += "Process exited with code: " + std::to_string(exit_code);
+            }
+            result_json["output"] = error_output;
+        } else {
+            result_json["status"] = "success";
+            result_json["output"] = result_str.empty() ? "[No output]" : result_str;
         }
         
-        if (exit_code != 0 && stderr_str.empty()) {
-             if (!result_str.empty()) result_str += "\n";
-             result_str += "Process exited with code: " + std::to_string(exit_code);
-        }
-        
-        return result_str.empty() ? "[No output]" : result_str;
+        return result_json.dump();
 
     } catch (...) {
         fs::remove(final_temp_path); // 确保在异常时也删除文件
@@ -621,31 +636,79 @@ std::string execute_shell_code(const std::string& shell_name, const std::string&
         
         std::array<char, 128> buffer;
         std::string result;
-        command += " 2>&1"; // Redirect stderr to stdout
+        int exit_code = 0;
+        
+        // Redirect stderr to a temporary file to capture it separately
+        fs::path stderr_path = temp_dir / (temp_filename + "_stderr.txt");
+        command += " 2> \"" + stderr_path.string() + "\"";
 
         std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(command.c_str(), "r"), pclose);
         if (!pipe) {
             fs::remove(temp_file_path);
+            fs::remove(stderr_path);
             throw std::runtime_error("Failed to execute command: " + command);
         }
 
         while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
             result += buffer.data();
         }
+        
+        exit_code = pclose(pipe.get());
 
-        // Clean up temporary file
+        // Read stderr
+        std::string stderr_str;
+        std::ifstream stderr_file(stderr_path);
+        if (stderr_file) {
+            stderr_str.assign((std::istreambuf_iterator<char>(stderr_file)),
+                              (std::istreambuf_iterator<char>()));
+        }
+
+        // Clean up temporary files
         fs::remove(temp_file_path);
+        fs::remove(stderr_path);
 
-        // Remove trailing newlines if present
+        // Remove trailing newlines if present from stdout and stderr
         while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) {
             result.pop_back();
         }
+        while (!stderr_str.empty() && (stderr_str.back() == '\n' || stderr_str.back() == '\r')) {
+            stderr_str.pop_back();
+        }
 
-        return result.empty() ? "[No output]" : result;
+        nlohmann::json result_json;
+        if (WIFEXITED(exit_code) && WEXITSTATUS(exit_code) == 0 && stderr_str.empty()) {
+            result_json["status"] = "success";
+            result_json["output"] = result.empty() ? "[No output]" : result;
+        } else {
+            result_json["status"] = "error";
+            std::string error_output = result;
+            if (!stderr_str.empty()) {
+                if(!error_output.empty()) error_output += "\n--- STDERR ---\n";
+                error_output += stderr_str;
+            }
+            if (WIFEXITED(exit_code)) {
+                int status = WEXITSTATUS(exit_code);
+                if (status != 0) {
+                    if (!error_output.empty()) error_output += "\n";
+                    error_output += "Process exited with status: " + std::to_string(status);
+                }
+            } else if (WIFSIGNALED(exit_code)) {
+                 if (!error_output.empty()) error_output += "\n";
+                 error_output += "Process terminated by signal: " + std::to_string(WTERMSIG(exit_code));
+            }
+            result_json["output"] = error_output;
+        }
+
+        return result_json.dump();
         
     } catch (...) {
         // Ensure temporary file is deleted even on exception
         fs::remove(temp_file_path);
+        // Also remove stderr temp file on error
+        fs::path stderr_path = temp_dir / (temp_filename + "_stderr.txt");
+        if (fs::exists(stderr_path)) {
+            fs::remove(stderr_path);
+        }
         throw;
     }
 }

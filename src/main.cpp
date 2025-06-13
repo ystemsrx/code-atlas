@@ -8,6 +8,7 @@
 #include "ApiClient.h"
 #include "CodeExecutor.h"
 #include "Utils.h"
+#include "Color.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -60,26 +61,26 @@ void main_loop() {
 
     // Main loop
     while (true) {
-        std::cout << "> ";
-        std::string user_input;
-        std::getline(std::cin, user_input);
+        // Add two newlines for proper spacing and reset color to prevent bleed
+        std::cout << std::endl << std::endl << Color::RESET << "> ";
+        std::string input;
+        std::getline(std::cin, input);
         if (std::cin.eof()) { // Handle Ctrl+D or end of file
              signal_handler(0);
         }
-        std::cout << std::endl;
 
-        if (user_input.empty()) {
+        if (input.empty()) {
             continue;
         }
 
-        messages.push_back({{"role", "user"}, {"content", user_input}});
+        messages.push_back({{"role", "user"}, {"content", input}});
 
         // Tool call loop
         while (true) {
             ApiResponse response = api_client.send_message(messages);
 
             if (response.type == ApiResponse::Type::API_ERROR) {
-                std::cerr << "\n[API Error] " << response.error_message << std::endl;
+                std::cerr << Color::RED << "\nAPI Error: " << response.error_message << Color::RESET << std::endl;
                 std::cerr << "\nPlease check:" << std::endl;
                 std::cerr << "1. Network connection is working properly" << std::endl;
                 std::cerr << "2. API server address is correct" << std::endl;
@@ -98,14 +99,17 @@ void main_loop() {
                 }
                 messages.push_back(assistant_message);
                 
-                std::cout << "\n\n--- Tool Output ---\n" << std::flush;
-                
                 for (const auto& tool_call : response.tool_calls) {
                     std::string result;
+                    std::string tool_name = "unknown";
                     try {
-                        std::string tool_name = tool_call.function["name"];
+                        tool_name = tool_call.function["name"];
                         auto arguments = nlohmann::json::parse(tool_call.function["arguments"].get<std::string>());
                         std::string code_to_run = arguments["code"];
+
+                        // The tool call header and code are now streamed by ApiClient.
+                        // We just print the output section header.
+                        std::cout << "\n\n--- Output ---" << std::endl;
 
                         if (tool_name == "python") {
                             result = python_executor.execute(code_to_run);
@@ -117,23 +121,38 @@ void main_loop() {
                             if (is_supported) {
                                 result = execute_shell_code(tool_name, code_to_run);
                             } else {
-                                result = "Error: Shell '" + tool_name + "' is not supported on " + os_to_string(detect_operating_system()) +
-                                        ". Supported shells: ";
-                                for (size_t i = 0; i < supported_shells.size(); ++i) {
-                                    if (i > 0) result += ", ";
-                                    result += supported_shells[i];
-                                }
+                                nlohmann::json error_json;
+                                error_json["status"] = "error";
+                                error_json["output"] = "Error: Shell '" + tool_name + "' is not supported on " + os_to_string(detect_operating_system());
+                                result = error_json.dump();
                             }
                         }
 
                     } catch (const nlohmann::json::parse_error& e) {
-                        result = "Error: Could not decode arguments: " + tool_call.function["arguments"].get<std::string>() + ". Details: " + e.what();
+                        nlohmann::json error_json;
+                        error_json["status"] = "error";
+                        error_json["output"] = "Error: Could not decode arguments: " + tool_call.function["arguments"].get<std::string>() + ". Details: " + e.what();
+                        result = error_json.dump();
                     } catch (const std::exception& e) {
-                        result = "Error: " + std::string(e.what());
+                        nlohmann::json error_json;
+                        error_json["status"] = "error";
+                        error_json["output"] = "Error: " + std::string(e.what());
+                        result = error_json.dump();
                     }
 
-                    std::cout << format_output_for_display(result) << std::flush;
-                    std::cout << std::endl;
+                    try {
+                        nlohmann::json result_json = nlohmann::json::parse(result);
+                        if (result_json.contains("status") && result_json["status"] == "success") {
+                            std::string success_output = result_json["output"];
+                            std::cout << Color::GREEN << format_output_for_display(success_output) << Color::RESET << std::endl;
+                        } else {
+                            std::cout << Color::RED << format_output_for_display(result) << Color::RESET << std::endl;
+                        }
+                    } catch (const nlohmann::json::parse_error& e) {
+                        // If result is not a valid JSON, print as is in red.
+                        std::cout << Color::RED << format_output_for_display(result) << Color::RESET << std::endl;
+                    }
+                    std::cout << "\n--------------" << std::endl;
 
                     messages.push_back({
                         {"role", "tool"},
@@ -142,42 +161,50 @@ void main_loop() {
                     });
                 }
                 
-                // Add an empty line before model output
-                std::cout << std::endl;
-                continue; // Continue tool call loop
+                // Continue tool call loop to get the next assistant message
+                continue; 
 
             } else if (response.type == ApiResponse::Type::MESSAGE) {
-                std::cout << std::endl;
-                if (!response.content.empty()) {
-                    messages.push_back({{"role", "assistant"}, {"content", response.content}});
-                }
+                // Newline is handled by ApiClient prepending one
+                messages.push_back({{"role", "assistant"}, {"content", response.content}});
                 break; // End tool call loop, wait for user input
             }
         }
-        std::cout << "\n" << std::endl;
     }
 }
 
+void enable_virtual_terminal_processing() {
+#ifdef _WIN32
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (hOut == INVALID_HANDLE_VALUE) {
+        return;
+    }
+    DWORD dwMode = 0;
+    if (!GetConsoleMode(hOut, &dwMode)) {
+        return;
+    }
+    dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+    SetConsoleMode(hOut, dwMode);
+#endif
+}
 
 int main() {
-    // Set console code page on Windows to properly display UTF-8 characters
-    #ifdef _WIN32
-        SetConsoleOutputCP(CP_UTF8);
-        SetConsoleCP(CP_UTF8);
-    #endif
-
-    // Register signal handler to handle Ctrl+C
+#ifdef _WIN32
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+#endif
+    enable_virtual_terminal_processing();
     signal(SIGINT, signal_handler);
 
     try {
         main_loop();
     } catch (const std::exception& e) {
-        std::cerr << "\n[Critical Error] Program encountered unhandled exception: " << e.what() << std::endl;
-        std::cerr << "\nThis may be caused by:" << std::endl;
-        std::cerr << "• Incorrect configuration file format" << std::endl;
-        std::cerr << "• Missing dependencies or incompatible versions" << std::endl;
-        std::cerr << "• Insufficient system resources" << std::endl;
-        std::cerr << "• API server configuration issues" << std::endl;
+        std::cerr << Color::RED << "\n[Critical Error] Program encountered unhandled exception: " << e.what() << Color::RESET << std::endl;
+        std::cerr << Color::RED << "\nThis may be caused by:" << Color::RESET << std::endl;
+        std::cerr << Color::RED << "• Incorrect configuration file format" << Color::RESET << std::endl;
+        std::cerr << Color::RED << "• Missing dependencies or incompatible versions" << Color::RESET << std::endl;
+        std::cerr << Color::RED << "• Insufficient system resources" << Color::RESET << std::endl;
+        std::cerr << Color::RED << "• API server configuration issues" << Color::RESET << std::endl;
         
         if(g_python_executor) {
             delete g_python_executor; // Cleanup

@@ -4,6 +4,11 @@
 #include <iostream>
 #include <map>
 #include <algorithm>
+#include <curl/curl.h>
+#include <stdexcept>
+#include <vector>
+#include "nlohmann/json.hpp"
+#include "Color.h"
 
 ApiClient::ApiClient(const nlohmann::json& config) {
     // 从配置中获取URL
@@ -72,12 +77,16 @@ ApiResponse ApiClient::send_message(const nlohmann::json& messages) {
     std::map<int, ToolCall> tool_calls_data;
     // 用于实时打印工具代码的状态
     struct PrintingState {
-        bool in_code_block = false;
         std::string code_buffer;
         std::string last_printed_code;
+        std::string language; // For markdown code blocks
+        bool in_code_block = false;
         bool found_final_brace = false;
     };
     std::map<int, PrintingState> tool_calls_printing_state;
+    PrintingState printing_state;
+    std::string saved_buffer;
+    bool is_first_chunk = true;
     
     ApiResponse final_response;
 
@@ -100,10 +109,61 @@ ApiResponse ApiClient::send_message(const nlohmann::json& messages) {
                 nlohmann::json chunk = nlohmann::json::parse(data_str);
                 auto delta = chunk["choices"][0]["delta"];
 
+                if (is_first_chunk) {
+                    bool has_content = delta.contains("content") && delta["content"].is_string() && !delta["content"].get<std::string>().empty();
+                    bool has_tools = delta.contains("tool_calls") && !delta["tool_calls"].is_null();
+                    if (has_content || has_tools) {
+                        std::cout << std::endl;
+                        is_first_chunk = false;
+                    }
+                }
+
                 if (delta.contains("content") && !delta["content"].is_null()) {
-                    std::string content = delta["content"];
-                    assistant_response_content += content;
-                    std::cout << content << std::flush;
+                    std::string text_chunk = delta["content"];
+                    assistant_response_content += text_chunk;
+
+                    std::string current_buffer = saved_buffer + text_chunk;
+                    saved_buffer.clear();
+
+                    size_t start_pos = 0;
+                    while(start_pos < current_buffer.length()) {
+                        if (!printing_state.in_code_block) {
+                            size_t block_start = current_buffer.find("```", start_pos);
+                            if (block_start != std::string::npos) {
+                                // Print text before the code block
+                                std::cout << current_buffer.substr(start_pos, block_start - start_pos);
+                                
+                                size_t lang_end = current_buffer.find('\n', block_start + 3);
+                                if (lang_end != std::string::npos) {
+                                    printing_state.language = current_buffer.substr(block_start + 3, lang_end - (block_start + 3));
+                                    std::cout << Color::YELLOW; // Start yellow color for code block
+                                    start_pos = lang_end + 1;
+                                    printing_state.in_code_block = true;
+                                } else {
+                                    // Incomplete ``` tag, save for next chunk
+                                    saved_buffer = current_buffer.substr(block_start);
+                                    start_pos = current_buffer.length(); // Exit loop
+                                }
+                            } else {
+                                // No code block start found, print rest of buffer
+                                std::cout << current_buffer.substr(start_pos);
+                                start_pos = current_buffer.length();
+                            }
+                        } else { // We are in a code block
+                            size_t block_end = current_buffer.find("```", start_pos);
+                            if (block_end != std::string::npos) {
+                                // Print text inside code block
+                                std::cout << current_buffer.substr(start_pos, block_end - start_pos);
+                                std::cout << Color::RESET; // End yellow color, no extra newline
+                                start_pos = block_end + 3;
+                                printing_state.in_code_block = false;
+                            } else {
+                                // No end of block, print everything and wait for next chunk
+                                std::cout << current_buffer.substr(start_pos);
+                                start_pos = current_buffer.length();
+                            }
+                        }
+                    }
                 }
                 
                 if (has_tools && delta.contains("tool_calls")) {
@@ -112,9 +172,9 @@ ApiResponse ApiClient::send_message(const nlohmann::json& messages) {
                     
                     if (tool_calls_data.find(idx) == tool_calls_data.end()) {
                          tool_calls_data[idx] = {"", "function", {{"name", ""}, {"arguments", ""}}};
-                         tool_calls_printing_state[idx] = PrintingState{};
+                         tool_calls_printing_state[idx] = PrintingState{}; // Initialize state
                          if(tool_chunk.contains("function") && tool_chunk["function"].contains("name")){
-                            std::cout << "\n--- Running Tool: " << tool_chunk["function"]["name"] << " ---\n" << std::flush;
+                            std::cout << "\n--- Tool Call: " << tool_chunk["function"]["name"].get<std::string>() << " ---\n" << std::flush;
                          }
                     }
 
@@ -135,58 +195,44 @@ ApiResponse ApiClient::send_message(const nlohmann::json& messages) {
                             state.code_buffer += args_chunk;
 
                             if (!state.in_code_block) {
-                                std::string start_marker = "{\"code\":\"";
-                                size_t start_pos = state.code_buffer.find(start_marker);
-                                if (start_pos != std::string::npos) {
+                                // A simple heuristic to detect the start of the code within the JSON argument string.
+                                if (state.code_buffer.find("{\"code\":\"") != std::string::npos) {
                                     state.in_code_block = true;
+                                    std::cout << Color::LIGHT_PINK;
                                 }
                             }
                             
-                            if (state.in_code_block) {
-                                // 首先尝试直接解析当前的JSON（不添加额外的"}）
-                                // 如果解析成功，说明已经到达了最后一个"}"
-                                bool is_complete_json = false;
+                            if (state.in_code_block && !state.found_final_brace) {
                                 std::string current_code;
                                 
                                 try {
                                     nlohmann::json parsed_json = nlohmann::json::parse(state.code_buffer);
                                     if (parsed_json.contains("code") && parsed_json["code"].is_string()) {
                                         current_code = parsed_json["code"];
-                                        is_complete_json = true;
                                         state.found_final_brace = true;
                                     }
                                 } catch (const nlohmann::json::parse_error& e) {
-                                    // JSON解析失败，说明还没有到达最后一个"}"，继续使用临时JSON
-                                    is_complete_json = false;
-                                }
-                                
-                                // 如果不是完整的JSON，尝试添加临时的结束符进行解析
-                                if (!is_complete_json) {
+                                    // JSON parsing failed, it's likely incomplete. Try parsing with a temporary closing bracket.
                                     try {
-                                        std::string json_to_parse = state.code_buffer + "\"}";
-                                        nlohmann::json parsed_json = nlohmann::json::parse(json_to_parse);
+                                        std::string temp_json_str = state.code_buffer + "\"}";
+                                        nlohmann::json parsed_json = nlohmann::json::parse(temp_json_str);
                                         if (parsed_json.contains("code") && parsed_json["code"].is_string()) {
                                             current_code = parsed_json["code"];
                                         }
-                                    } catch (const nlohmann::json::parse_error& e) {
-                                        // 仍然解析失败，继续等待更多数据
-                                        current_code = "";
+                                    } catch (const nlohmann::json::parse_error& e2) {
+                                        current_code = ""; // Still fails, wait for more data.
                                     }
                                 }
                                 
-                                // 打印新增的代码部分
-                                if (!current_code.empty()) {
-                                    if (current_code.length() > state.last_printed_code.length() && 
-                                        current_code.substr(0, state.last_printed_code.length()) == state.last_printed_code) {
-                                        std::string new_part = current_code.substr(state.last_printed_code.length());
-                                        std::cout << new_part << std::flush;
-                                        state.last_printed_code = current_code;
-                                    }
+                                // Print the newly added part of the code
+                                if (!current_code.empty() && current_code.length() > state.last_printed_code.length()) {
+                                    std::string new_part = current_code.substr(state.last_printed_code.length());
+                                    std::cout << new_part << std::flush;
+                                    state.last_printed_code = current_code;
                                 }
                                 
-                                // 如果找到了完整的JSON（最终的"}"），结束代码块处理
                                 if (state.found_final_brace) {
-                                    state.in_code_block = false;
+                                    std::cout << Color::RESET;
                                 }
                             }
                         }
@@ -242,6 +288,11 @@ ApiResponse ApiClient::send_message(const nlohmann::json& messages) {
         return final_response;
     }
     
+    // Ensure color is reset if a markdown code block was left open
+    if (printing_state.in_code_block) {
+        std::cout << Color::RESET;
+    }
+
     final_response.content = assistant_response_content;
     if (finish_reason == "tool_calls" && has_tools) {
         final_response.type = ApiResponse::Type::TOOL_CALL;
