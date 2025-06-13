@@ -159,12 +159,12 @@ ApiResponse ApiClient::send_message(const nlohmann::json& messages) {
                             size_t block_start = current_buffer.find("```", start_pos);
                             if (block_start != std::string::npos) {
                                 // Print text before the code block
-                                std::cout << current_buffer.substr(start_pos, block_start - start_pos);
+                                std::cout << current_buffer.substr(start_pos, block_start - start_pos) << std::flush;
                                 
                                 size_t lang_end = current_buffer.find('\n', block_start + 3);
                                 if (lang_end != std::string::npos) {
                                     printing_state.language = current_buffer.substr(block_start + 3, lang_end - (block_start + 3));
-                                    std::cout << Color::YELLOW; // Start yellow color for code block
+                                    std::cout << Color::YELLOW << std::flush; // Start yellow color for code block
                                     start_pos = lang_end + 1;
                                     printing_state.in_code_block = true;
                                 } else {
@@ -173,21 +173,38 @@ ApiResponse ApiClient::send_message(const nlohmann::json& messages) {
                                     start_pos = current_buffer.length(); // Exit loop
                                 }
                             } else {
-                                // No code block start found, print rest of buffer
-                                std::cout << current_buffer.substr(start_pos);
+                                // No code block start found, print most of it but check for partial ``` at the end.
+                                std::string part_to_process = current_buffer.substr(start_pos);
+                                if (part_to_process.length() >= 2 && part_to_process.substr(part_to_process.length() - 2) == "``") {
+                                    saved_buffer = "``";
+                                    part_to_process = part_to_process.substr(0, part_to_process.length() - 2);
+                                } else if (part_to_process.length() >= 1 && part_to_process.substr(part_to_process.length() - 1) == "`") {
+                                    saved_buffer = "`";
+                                    part_to_process = part_to_process.substr(0, part_to_process.length() - 1);
+                                }
+                                std::cout << part_to_process << std::flush;
                                 start_pos = current_buffer.length();
                             }
                         } else { // We are in a code block
                             size_t block_end = current_buffer.find("```", start_pos);
                             if (block_end != std::string::npos) {
                                 // Print text inside code block
-                                std::cout << current_buffer.substr(start_pos, block_end - start_pos);
-                                std::cout << Color::RESET; // End yellow color, no extra newline
+                                std::cout << current_buffer.substr(start_pos, block_end - start_pos) << std::flush;
+                                std::cout << Color::RESET << std::flush; // End yellow color, no extra newline
                                 start_pos = block_end + 3;
                                 printing_state.in_code_block = false;
+                                printing_state.language.clear();
                             } else {
-                                // No end of block, print everything and wait for next chunk
-                                std::cout << current_buffer.substr(start_pos);
+                                // No end of block, print most of it but check for partial ``` at the end.
+                                std::string part_to_process = current_buffer.substr(start_pos);
+                                if (part_to_process.length() >= 2 && part_to_process.substr(part_to_process.length() - 2) == "``") {
+                                     saved_buffer = "``";
+                                     part_to_process = part_to_process.substr(0, part_to_process.length() - 2);
+                                } else if (part_to_process.length() >= 1 && part_to_process.substr(part_to_process.length() - 1) == "`") {
+                                     saved_buffer = "`";
+                                     part_to_process = part_to_process.substr(0, part_to_process.length() - 1);
+                                }
+                                std::cout << part_to_process << std::flush;
                                 start_pos = current_buffer.length();
                             }
                         }
