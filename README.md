@@ -1,10 +1,8 @@
-[English](README.md) | [**简体中文**](README.zh.md)
+[English](README.md) | [简体中文](README.zh.md)
 
 # Code Atlas
 
 **Code Atlas** is a powerful cross-platform local intelligent agent application inspired by [Open Interpreter](https://github.com/OpenInterpreter/open-interpreter). Implemented in C++, it supports running Python and shell scripts locally on Windows, Linux, and macOS, with integrated LLMs for natural language-driven interactive programming.
-
-> **Full cross-platform support** for Windows, Linux, and macOS with automatic OS detection and shell selection.
 
 ## ✨ Features
 
@@ -20,8 +18,6 @@
 
 ## 📋 System Requirements
 
-### Operating System
-
 * **OS**: Windows 10/11, Linux, or macOS
 * **CPU**: x64 architecture (CUDA-compatible GPU recommended)
 * **Memory**: Minimum 8GB (16GB+ recommended)
@@ -34,7 +30,15 @@
 * Python 3.x + development headers
 * Git
 
-### Windows (MSYS2 / MinGW64)
+## 🚀 Getting Started
+
+### Option 1: Download Prebuilt Binary
+
+Download a precompiled binary from [Releases](https://github.com/ystemsrx/code-atlas/releases).
+
+### Option 2: Build from Source
+
+#### Windows (MSYS2 / MinGW64)
 
 ```bash
 pacman -Syu && pacman -Su
@@ -46,7 +50,7 @@ pacman -S --needed \
   mingw-w64-x86_64-python
 ```
 
-### Linux Example
+#### Linux
 
 ```bash
 sudo apt update && sudo apt install -y ninja-build
@@ -68,11 +72,7 @@ Or simply run:
 ./build.sh
 ```
 
-## 🚀 Getting Started
-
-Download a precompiled binary from [Releases](https://github.com/ystemsrx/code-atlas/releases).
-
-### Or Build from Source
+#### General Build Process
 
 ```bash
 git clone --depth 1 https://github.com/ystemsrx/code-atlas.git
@@ -83,13 +83,33 @@ cmake ..
 cmake --build .
 ```
 
-### Configure Model and API
+### Option 3: Using Docker
 
-Edit the `config.json` file (copy from `config_template.json` if missing):
+1. First, modify `config_template.json` according to your needs. If you want to connect to a locally running llama.cpp server, change the `base_url` to:
+   ```
+   "base_url": "http://host.docker.internal:8080/v1/chat/completions"
+   ```
+
+2. Build the Docker image:
+   ```bash
+   docker build -t code-atlas .
+   ```
+
+3. Run the container:
+   ```bash
+   docker run -it --add-host=host.docker.internal:host-gateway code-atlas
+   ```
+   The `--add-host` flag allows the container to connect to services running on your host machine.
+
+## ⚙️ Configuration
+
+Copy the template configuration file:
 
 ```bash
 cp config_template.json config.json
 ```
+
+Edit the `config.json` file:
 
 ```json
 {
@@ -108,9 +128,23 @@ cp config_template.json config.json
 }
 ```
 
-### Launch LLM Server (Optional)
+### Configuration Details
 
-For example, with `llama.cpp`:
+* `system.prompt`: System prompt string
+* `model`: Model parameters
+* `api`: API base URL and key (if using cloud models)
+
+### Supported Runtime Environments
+
+Code Atlas automatically selects the appropriate environment based on your OS:
+
+* Python: Stateful execution, IPython-like
+* PowerShell/Batch: For Windows
+* Bash: For Linux/macOS
+
+## 🔌 Using with LLM Server
+
+For local inference, you can use `llama.cpp`:
 
 ```bash
 llama-server --jinja -fa -m model.gguf
@@ -120,7 +154,7 @@ llama-server --jinja -fa -hf user/model.gguf
 
 > Reference: [llama.cpp/function-calling.md](https://github.com/ggml-org/llama.cpp/blob/master/docs/function-calling.md)
 
-### Start the Application
+## 🚀 Running the Application
 
 ```bash
 ./code-atlas
@@ -139,20 +173,6 @@ List processes:
 Create/rename files:
 
 ![create_files](https://github.com/ystemsrx/code-atlas/blob/master/assets/run_create_files.png?raw=true)
-
-## ⚙️ Configuration Details
-
-Code Atlas uses a `config.json` file:
-
-* `system.prompt`: System prompt string
-* `model`: Model parameters
-* `api`: API base URL and key (if using cloud models)
-
-Supported runtime environments (automatically selected based on OS):
-
-* Python: Stateful execution, IPython-like
-* PowerShell/Batch: For Windows
-* Bash: For Linux/macOS
 
 ## 🧩 Troubleshooting
 
