@@ -74,7 +74,8 @@ ApiResponse ApiClient::send_message(const nlohmann::json& messages) {
     struct PrintingState {
         bool in_code_block = false;
         std::string code_buffer;
-        std::string pending_escape_buffer;
+        std::string last_printed_code;
+        bool found_final_brace = false;
     };
     std::map<int, PrintingState> tool_calls_printing_state;
     
@@ -131,33 +132,61 @@ ApiResponse ApiClient::send_message(const nlohmann::json& messages) {
                             
                             // 实时打印代码逻辑
                             auto& state = tool_calls_printing_state[idx];
-                            state.pending_escape_buffer += args_chunk;
+                            state.code_buffer += args_chunk;
 
                             if (!state.in_code_block) {
                                 std::string start_marker = "{\"code\":\"";
-                                size_t start_pos = state.pending_escape_buffer.find(start_marker);
+                                size_t start_pos = state.code_buffer.find(start_marker);
                                 if (start_pos != std::string::npos) {
                                     state.in_code_block = true;
-                                    state.pending_escape_buffer = state.pending_escape_buffer.substr(start_pos + start_marker.length());
                                 }
                             }
                             
                             if (state.in_code_block) {
-                                state.code_buffer += state.pending_escape_buffer;
-                                state.pending_escape_buffer = "";
-                                std::string end_marker = "\""; // End of code is just a quote
-                                size_t end_pos = state.code_buffer.rfind(end_marker);
-                                if (end_pos != std::string::npos && state.code_buffer.rfind("}") == end_pos + 1){
-                                    std::string code_to_print = state.code_buffer.substr(0, end_pos);
-                                    std::cout << unescape_string(code_to_print) << std::flush;
-                                    state.code_buffer = state.code_buffer.substr(end_pos + end_marker.length());
+                                // 首先尝试直接解析当前的JSON（不添加额外的"}）
+                                // 如果解析成功，说明已经到达了最后一个"}"
+                                bool is_complete_json = false;
+                                std::string current_code;
+                                
+                                try {
+                                    nlohmann::json parsed_json = nlohmann::json::parse(state.code_buffer);
+                                    if (parsed_json.contains("code") && parsed_json["code"].is_string()) {
+                                        current_code = parsed_json["code"];
+                                        is_complete_json = true;
+                                        state.found_final_brace = true;
+                                    }
+                                } catch (const nlohmann::json::parse_error& e) {
+                                    // JSON解析失败，说明还没有到达最后一个"}"，继续使用临时JSON
+                                    is_complete_json = false;
+                                }
+                                
+                                // 如果不是完整的JSON，尝试添加临时的结束符进行解析
+                                if (!is_complete_json) {
+                                    try {
+                                        std::string json_to_parse = state.code_buffer + "\"}";
+                                        nlohmann::json parsed_json = nlohmann::json::parse(json_to_parse);
+                                        if (parsed_json.contains("code") && parsed_json["code"].is_string()) {
+                                            current_code = parsed_json["code"];
+                                        }
+                                    } catch (const nlohmann::json::parse_error& e) {
+                                        // 仍然解析失败，继续等待更多数据
+                                        current_code = "";
+                                    }
+                                }
+                                
+                                // 打印新增的代码部分
+                                if (!current_code.empty()) {
+                                    if (current_code.length() > state.last_printed_code.length() && 
+                                        current_code.substr(0, state.last_printed_code.length()) == state.last_printed_code) {
+                                        std::string new_part = current_code.substr(state.last_printed_code.length());
+                                        std::cout << new_part << std::flush;
+                                        state.last_printed_code = current_code;
+                                    }
+                                }
+                                
+                                // 如果找到了完整的JSON（最终的"}"），结束代码块处理
+                                if (state.found_final_brace) {
                                     state.in_code_block = false;
-                                } else {
-                                     auto [safe_content, remaining] = safe_print_with_escapes(state.code_buffer);
-                                     if (!safe_content.empty()) {
-                                         std::cout << unescape_string(safe_content) << std::flush;
-                                         state.code_buffer = remaining;
-                                     }
                                 }
                             }
                         }
